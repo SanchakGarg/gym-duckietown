@@ -159,3 +159,37 @@ def test_actuation_gains_scale_command():
     a = base.act(rgb, t=0.0, segmentation=seg).action
     b = scaled.act(rgb, t=0.0, segmentation=seg).action
     np.testing.assert_allclose(b, a * np.array([2.0, 3.0]))
+
+
+def test_yolo_result_to_masks_without_weights():
+    """YoloSegmenter.from_result on a stand-in for an Ultralytics Results object."""
+    from types import SimpleNamespace
+
+    from duckie_yolo.perception.segmenters import YoloSegmenter
+
+    class T:  # minimal tensor stand-in
+        def __init__(self, a):
+            self.a = np.asarray(a)
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self.a
+
+    poly_y = np.array([[100, 300], [140, 300], [140, 400], [100, 400]], np.float32)
+    poly_d = np.array([[400, 200], [460, 200], [460, 260], [400, 260]], np.float32)
+    class Boxes:
+        def __init__(self, cls, conf):
+            self.cls, self.conf = T(cls), T(conf)
+
+        def __len__(self):
+            return len(self.cls.a)
+
+    res = SimpleNamespace(masks=SimpleNamespace(xy=[poly_y, poly_d]), boxes=Boxes([YELLOW, DUCKIE], [0.9, 0.8]))
+    seg = YoloSegmenter.__new__(YoloSegmenter)
+    seg.work_scale = 0.5
+    out = seg.from_result(res, (640, 480))
+    assert out.work_size == (320, 240)
+    assert out.class_masks[YELLOW][175, 60] and not out.class_masks[YELLOW][100, 60]
+    assert len(out.instances) == 1 and out.instances[0].cls == DUCKIE
