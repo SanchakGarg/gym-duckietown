@@ -1,0 +1,23 @@
+# duckie_yolo agent container for the Jetson: Ultralytics + CUDA + TensorRT matching the JetPack.
+# The hardware is owned by robot_io running natively on the host; this container only needs the
+# network (ZMQ on localhost:7777) and the GPU.
+#
+# build (from yolo_lane_following/):
+#   docker build -t duckie-yolo-agent --build-arg JETPACK=6 -f duckie_yolo/robot/docker/Dockerfile.agent .
+# export a TensorRT engine on the robot:
+#   docker run --rm -it --runtime nvidia --ipc host -v $PWD:/work -w /work --entrypoint python3 \
+#       duckie-yolo-agent -m duckie_yolo.robot.export_engine --weights models/best.pt
+# drive:
+#   docker run --rm -it --runtime nvidia --network host --ipc host -v $PWD:/work -w /work \
+#       duckie-yolo-agent --weights models/best.engine --robot-config configs/robot_mybot.yaml
+ARG JETPACK=6
+FROM ultralytics/ultralytics:latest-jetson-jetpack${JETPACK}
+
+WORKDIR /opt/duckie_yolo
+COPY pyproject.toml README.md ./
+COPY duckie_yolo ./duckie_yolo
+COPY configs ./configs
+RUN python3 -m pip install --no-cache-dir pyzmq pyyaml \
+ && python3 -m pip install --no-cache-dir --no-deps -e .
+
+ENTRYPOINT ["python3", "-m", "duckie_yolo.robot.run_robot"]

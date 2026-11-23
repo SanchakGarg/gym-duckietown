@@ -1,0 +1,54 @@
+# duckie_yolo agent configuration (all fields optional; defaults = duckie_yolo/config.py)
+# Speeds/yaw rates are physical (m/s, rad/s). `actuation` converts them to platform commands:
+#   simulator: applied automatically (v_gain=1/0.699, omega_gain=1/0.445, tools/identify_sim_dynamics.py)
+#   real robot: taken from the robot calibration YAML (calibrate_wheels.py) unless set here
+# Real-robot preset: slower, TensorRT FP16 engine built on the Orin (robot/export_engine.py)
+lane:
+  yellow_offset: 0.117
+  white_offset: 0.15
+estimator:
+  work_scale: 0.5
+  stride: 2
+  max_points: 600
+  x_min: 0.1
+  x_max: 0.55
+  y_abs_max: 0.6
+  min_points: 15
+  poly_degree: 2
+  ransac_iters: 40
+  ransac_thresh: 0.025
+  min_x_span_quadratic: 0.18
+  quadratic_gain: 1.5
+  white_min_right_of_yellow: 0.06
+  max_center_disagreement: 0.09
+  ema_alpha: 0.6
+  stopline_corridor: 0.22
+  min_red_points: 12
+  obstacle_min_area_px: 30
+controller:
+  v_ref: 0.22
+  v_min: 0.1
+  lookahead: 0.3
+  curvature_gain: 0.2
+  omega_max: 6.0
+  lost_timeout: 0.5
+  lost_speed_scale: 0.5
+  min_confidence: 0.15
+behavior:
+  enable_stoplines: true
+  stopline_trigger_x: 0.22
+  stop_duration: 2.0
+  cross_duration: 2.2
+  cross_speed: 0.2
+  stopline_cooldown: 3.0
+  enable_obstacles: true
+  obstacle_trigger_x: 0.4
+  obstacle_lane_margin: 0.16
+  obstacle_clear_time: 0.6
+segmenter:
+  weights: models/best.engine
+  imgsz: 320
+  conf: 0.35
+  iou: 0.5
+  device: ''
+  half: true

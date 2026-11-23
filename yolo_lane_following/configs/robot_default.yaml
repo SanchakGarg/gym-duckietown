@@ -1,0 +1,26 @@
+# UNCALIBRATED defaults (stock Duckietown intrinsics + sim-like camera mounting).
+# Copy to configs/robot_<name>.yaml and run calibrate_intrinsics / calibrate_extrinsics / calibrate_wheels.
+name: duckiebot
+calibrated: {intrinsics: false, extrinsics: false, wheels: false}
+wheels: {gain: 1.0, trim: 0.0, radius: 0.0318, k: 27.0, limit: 1.0, baseline: 0.102}
+actuation: {v_gain: 1.0, omega_gain: 1.0}
+camera:
+  width: 640
+  height: 480
+  H_img2ground:
+  - [9.341347734741606e-20, 0.00020269054085096354, 0.24261521798253555]
+  - [-0.0008131963582658037, 0.0, 0.2602228346450573]
+  - [-4.92095821173264e-19, 0.007112930667769428, -0.9345430092714412]
+  rectifier:
+    model: pinhole
+    K:
+    - [305.5718893575089, 0.0, 303.0797142544728]
+    - [0.0, 308.8338858195428, 231.8845403702499]
+    - [0.0, 0.0, 1.0]
+    D: [-0.2, 0.0305, 0.0005859930422629722, -0.0006697840226199427, 0.0]
+    in_size: [640, 480]
+    out_size: [640, 480]
+    K_new:
+    - [312.77408948188935, 0.0, 320.0]
+    - [0.0, 312.77408948188935, 240.0]
+    - [0.0, 0.0, 1.0]
