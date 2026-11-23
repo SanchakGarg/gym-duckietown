@@ -40,6 +40,65 @@ def build_agent(args, cfg=None):
     return LaneFollowingAgent(seg, camera, cfg), kind
 
 
+def top_down_view(env, follow: bool = True, half_width_m: float = 0.9, size: int = 480, lookahead=None) -> np.ndarray:
+    """Bird's-eye render of the map *with the robot* (BGR), for humans only.
+
+    Overlays: cyan = lane-centre paths of every lane (the middle of each lane, between the
+    yellow and white lines - this is what "following the lane" means); green = the path of
+    the robot's own lane ahead; red dot = the agent's current lookahead target; arrow = heading.
+    ``follow`` crops a window of +-half_width_m around the robot.
+    """
+    from gym_duckietown.graphics import bezier_point
+    from gym_duckietown.simulator import WINDOW_HEIGHT, WINDOW_WIDTH, get_dir_vec, get_right_vec
+
+    u = env.unwrapped
+    img = u._render_img(WINDOW_WIDTH, WINDOW_HEIGHT, u.multi_fbo_human, u.final_fbo_human, u.img_array_human,
+                        top_down=True)
+    img = cv2.cvtColor(np.ascontiguousarray(img), cv2.COLOR_RGB2BGR)
+    # the top-down camera looks straight down at the map centre (Simulator._render_img)
+    ts = u.road_tile_size
+    a, b = u.grid_width * ts / 2.0, u.grid_height * ts / 2.0
+    ppm = (WINDOW_HEIGHT / 2.0) / (max(a, b) + 0.1)
+
+    def px(p):
+        p = np.asarray(p, dtype=float).reshape(-1, 3)
+        return np.column_stack([WINDOW_WIDTH / 2.0 + (p[:, 0] - a) * ppm, WINDOW_HEIGHT / 2.0 + (p[:, 2] - b) * ppm])
+
+    lw = max(1, int(round(0.012 * ppm)))
+    ts_ = np.linspace(0, 1, 16)
+    for tile in u.drivable_tiles:
+        for cps in tile["curves"]:
+            pts = np.array([bezier_point(cps, t) for t in ts_])
+            cv2.polylines(img, [px(pts).astype(np.int32)], False, (255, 200, 0), lw, cv2.LINE_AA)
+    # own lane ahead: walk along the closest curve in the heading direction
+    pos, ang = u.cur_pos.copy(), u.cur_angle
+    path = []
+    for _ in range(40):
+        pt, tan = u.closest_curve_point(pos, ang)
+        if pt is None:
+            break
+        path.append(pt)
+        tan = tan / max(np.linalg.norm(tan), 1e-9)
+        pos = pt + 0.04 * tan
+        ang = float(np.arctan2(-tan[2], tan[0]))
+    if len(path) > 1:
+        cv2.polylines(img, [px(np.array(path)).astype(np.int32)], False, (0, 220, 0), lw + 2, cv2.LINE_AA)
+    d = get_dir_vec(u.cur_angle)
+    left = -get_right_vec(u.cur_angle)  # robot frame y (left) on the floor
+    c = px(u.cur_pos)[0]
+    tip = px(u.cur_pos + 0.15 * d)[0]
+    cv2.arrowedLine(img, tuple(int(v) for v in c), tuple(int(v) for v in tip), (255, 255, 255), lw + 1, cv2.LINE_AA, tipLength=0.3)
+    if lookahead is not None:
+        target = u.cur_pos + lookahead[0] * d + lookahead[1] * left
+        cv2.circle(img, tuple(int(v) for v in px(target)[0]), lw + 4, (0, 0, 255), -1, cv2.LINE_AA)
+    if not follow:
+        return cv2.resize(img, (int(size * WINDOW_WIDTH / WINDOW_HEIGHT), size))
+    r = max(8, int(half_width_m * ppm))
+    pad = cv2.copyMakeBorder(img, r, r, r, r, cv2.BORDER_CONSTANT, value=(30, 30, 30))
+    crop = pad[int(c[1]) : int(c[1]) + 2 * r, int(c[0]) : int(c[0]) + 2 * r]
+    return cv2.resize(crop, (size, size), interpolation=cv2.INTER_LINEAR)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--map", default="small_loop")
@@ -60,6 +119,8 @@ def main(argv=None):
     ap.add_argument("--no-show", action="store_true")
     ap.add_argument("--raw-actuation", action="store_true", help="do not compensate the sim motor dynamics")
     ap.add_argument("--log-csv", default="", help="per-step log (gt vs estimate, command)")
+    ap.add_argument("--top-down", nargs="?", const="follow", default="", choices=["follow", "full"],
+                    help="also show a bird's-eye view with the robot (follow: zoomed on the robot, full: whole map)")
     a = ap.parse_args(argv)
 
     agent, kind = build_agent(a)
@@ -95,6 +156,14 @@ def main(argv=None):
                     f"gt  d={gt[0]:+.3f} phi={np.degrees(gt[1]):+.1f}" if gt else "gt: not in lane",
                 ]
                 frame = compose(res.image, res.segmentation, e, agent.camera, lines)
+                if a.top_down:
+                    td = top_down_view(env, follow=a.top_down == "follow", size=frame.shape[0], lookahead=e.lookahead)
+                    for i, (txt, col) in enumerate([("green: lane centre it follows", (0, 220, 0)),
+                                                    ("cyan: all lane centres", (255, 200, 0)),
+                                                    ("red: steering target", (0, 0, 255))]):
+                        cv2.putText(td, txt, (8, 22 + 20 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 3, cv2.LINE_AA)
+                        cv2.putText(td, txt, (8, 22 + 20 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.5, col, 1, cv2.LINE_AA)
+                    frame = np.hstack([frame, td])
                 if a.video:
                     if writer is None:
                         writer = cv2.VideoWriter(a.video, cv2.VideoWriter_fourcc(*"mp4v"), 30, (frame.shape[1], frame.shape[0]))
