@@ -13,8 +13,12 @@ import os
 import pyglet
 
 on_mac = "Darwin" in platform.system()
-print(pyglet.options)
-if on_mac:
+# DUCKIETOWN_PYGLET_HEADLESS=0/1 overrides the platform default
+# (e.g. set it to 0 on Linux to render through an X server such as Xvfb instead of EGL).
+_headless_env = os.environ.get("DUCKIETOWN_PYGLET_HEADLESS")
+if _headless_env is not None:
+    pyglet.options["headless"] = _headless_env.strip().lower() in ("1", "true", "yes")
+elif on_mac:
     pyglet.options["headless"] = False
 else:
     pyglet.options["headless"] = True

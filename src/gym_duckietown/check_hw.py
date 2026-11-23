@@ -3,7 +3,8 @@ from typing import Dict
 import json
 import pyglet
 
-pyglet.options["headless"] = True
+# NOTE: the headless/windowed choice is made once in gym_duckietown/__init__.py
+# (forcing headless=True here broke macOS, which has no EGL).
 from pyglet import gl
 
 __all__ = ["get_graphics_information"]

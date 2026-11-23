@@ -20,7 +20,8 @@ def get_texture(tex_name: str, rng=None, segment: bool = False) -> "Texture":
     paths = get_texture_file(tex_name)
 
     if rng:
-        path_idx = rng.randint(0, len(paths))
+        # support both numpy Generator (gym>=0.22 seeding) and legacy RandomState
+        path_idx = rng.integers(0, len(paths)) if hasattr(rng, "integers") else rng.randint(0, len(paths))
         path = paths[path_idx]
     else:
         path = paths[0]
@@ -43,15 +44,21 @@ class Texture:
     # Cache of textures
     tex_cache = {}
 
-    def __init__(self, tex, tex_name, rng):
+    def __init__(self, tex, tex_name, rng, tex_path=None):
         assert not isinstance(tex, str)
         self.tex = tex
         self.tex_name = tex_name
         self.rng = rng
+        # file the texture was loaded from; when known, the segmentation render is derived
+        # from this exact image so that segmented lane markings align with the RGB render
+        self.tex_path = tex_path
 
     def bind(self, segment=False):
         if segment:
-            self = get_texture(self.tex_name, self.rng, True)
+            if self.tex_path is not None:
+                self = Texture(load_texture(self.tex_path, segment=True), self.tex_name, None)
+            else:
+                self = get_texture(self.tex_name, self.rng, True)
 
         gl.glBindTexture(self.tex.target, self.tex.id)
 

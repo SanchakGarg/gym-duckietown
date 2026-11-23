@@ -638,7 +638,7 @@ class Simulator(gym.Env):
             fn = get_texture_file(f"tiles-processed/{self.style}/{kind}/texture")[0]
             # ft = get_fancy_textures(self.style, texture_name)
             t = load_texture(fn, segment=False, segment_into_color=False)
-            tt = Texture(t, tex_name=kind, rng=rng)
+            tt = Texture(t, tex_name=kind, rng=rng, tex_path=fn)
             tile["texture"] = tt
 
             # Random tile color multiplier
