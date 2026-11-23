@@ -48,11 +48,11 @@ Lane following, domain randomization on (`loop_empty`, `small_loop`, `zigzag_dis
 Intersections and obstacles (`4way`, `udem1`, unseen `ETH_large_intersect`, `loop_obstacles`,
 `loop_dyn_duckiebots`), starting in lane (`--start-in-lane`):
 
-| agent | survived | red-line stops | notes |
-|---|---|---|---|
-| expert (privileged) | 11/15 | 0 | no stop-line / obstacle logic: drives into obstacles |
-| oracle (perfect masks) | 13/15 | 22 | 2 failures in `4way` |
-| **YOLO11n-seg** | **15/15** | **24** | stops at red lines, crosses, stops for duckies / duckiebots |
+| agent | survived | red-line stops | obstacle stops | notes |
+|---|---|---|---|---|
+| expert (privileged) | 11/15 | 0 | 0 | no stop-line / obstacle logic: drives into obstacles |
+| oracle (perfect masks) | 13/15 | 14 | 4 | 2 failures in `4way` |
+| **YOLO11n-seg** | **15/15** | **17** | **4** | stops at red lines, crosses, stops for duckies / duckiebots |
 
 So the YOLO perception is as good as perfect masks for driving. The remaining gap to the
 privileged expert is the geometric estimator, not the model. Limitations seen in simulation:
