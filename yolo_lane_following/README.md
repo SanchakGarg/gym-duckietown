@@ -20,21 +20,60 @@ camera ─► (rectify, real robot only) ─► YOLO11n-seg ─► masks: yellow
 
 ## Results (simulation)
 
-Closed loop in gym-duckietown, 800 steps (≈27 s) per episode, random starts:
+**Model.** YOLO11n-seg at 320 px, trained for 8 epochs on 21,951 auto-labelled frames from 16 maps,
+with domain and camera randomization on. Mask mAP50:
 
-| agent | loop_empty | small_loop | zigzag_dists | mean lateral error |
+| split | all | yellow | white | red stop | duckie | duckiebot |
+|---|---|---|---|---|---|---|
+| validation (training maps, held-out episodes) | 0.634 | 0.622 | 0.709 | 0.695 | 0.620 | 0.524 |
+| test (2 maps never used for training) | 0.657 | 0.654 | 0.665 | 0.653 | – | – |
+
+Inference on an Apple M4 Max: 11 ms/frame on the CPU, 29 ms on MPS (including pre/post-processing).
+
+**Closed loop** in gym-duckietown, 800 steps (≈27 s) per episode, 3 episodes per map, same seeds
+for every agent (`duckie_yolo.sim.eval_sim`). *expert* = privileged pure pursuit on the
+simulator's true pose. *oracle* = this agent fed perfect masks from the segmentation render.
+*color* = HSV thresholds instead of YOLO.
+
+Lane following, domain randomization on (`loop_empty`, `small_loop`, `zigzag_dists`, plus the unseen
+`ETHZ_autolab_technical_track`):
+
+| agent | survived | distance / episode | mean \|d\| | mean \|φ\| |
 |---|---|---|---|---|
-| perfect masks ("oracle": tests geometry + control) | 2/3 | 3/3 | 3/3 | 3–5 cm |
-| YOLO11n-seg (sim-trained) | _pending_ | | | |
+| expert (privileged) | 12/12 | 4.4 m | 2.3 cm | 6.8° |
+| oracle (perfect masks) | 10/12 | 6.0 m | 7.0 cm | 10.7° |
+| **YOLO11n-seg** | **10/12** | **6.0 m** | **7.1 cm** | **10.8°** |
+| color thresholds | 10/12 | 1.3 m (mostly stopped: lane lost) | 15.1 cm | 17.0° |
 
-Two details matter here, both handled in the code:
+Intersections and obstacles (`4way`, `udem1`, unseen `ETH_large_intersect`, `loop_obstacles`,
+`loop_dyn_duckiebots`), starting in lane (`--start-in-lane`):
+
+| agent | survived | red-line stops | notes |
+|---|---|---|---|
+| expert (privileged) | 11/15 | 0 | no stop-line / obstacle logic: drives into obstacles |
+| oracle (perfect masks) | 13/15 | 22 | 2 failures in `4way` |
+| **YOLO11n-seg** | **15/15** | **24** | stops at red lines, crosses, stops for duckies / duckiebots |
+
+So the YOLO perception is as good as perfect masks for driving. The remaining gap to the
+privileged expert is the geometric estimator, not the model. Limitations seen in simulation:
+* It **waits behind static obstacles** indefinitely, because there is no overtaking.
+* Random starts outside the lane (in the opposite lane, or turned more than about 30°) are often not recovered.
+
+Three details matter here, all handled in the code:
 * **Simulator dynamics.** gym-duckietown (daffy) integrates identified motor dynamics. Realized
   speed is 0.70× and realized yaw rate 0.45× the commanded values, so a geometric controller
   under-steers by about 36% unless this is compensated (`ActuationConfig`,
   `tools/identify_sim_dynamics.py`). Without compensation the oracle survived 2/9 episodes;
   with it, 8/9. On the real robot the same gains come from `calibrate_wheels.py`.
+* **Intersections.** After stopping, the robot crosses along a virtual lane whose direction comes
+  from the red stop line (perpendicular to the lane), dead-reckoned through the intersection.
+  A single visible white line is disambiguated (our right edge vs. the road's left edge)
+  using the lane being tracked.
 * **Segmentation alignment.** The upstream segmentation render used different tile textures than
   the RGB render, which misplaced dash labels. This is fixed in this fork (see below).
+
+Watch it: `python -m duckie_yolo.sim.run_sim --map udem1 --weights models/best.pt --device cpu --start-angle 15 --top-down`.
+`--top-down` adds a bird's-eye panel with the robot, the lane-centre path it follows (green) and its steering target (red).
 
 ## 1. Install (development machine)
 
@@ -79,8 +118,10 @@ python tools/check_label_alignment.py data/align      # optional sanity check (-
 # (b) closed-loop check of geometry + control with perfect masks (no YOLO yet)
 python -m duckie_yolo.sim.eval_sim --agent oracle --maps loop_empty small_loop zigzag_dists --episodes 3
 
-# (c) train YOLO11n-seg (MPS / CUDA / CPU picked automatically), exports ONNX
-python -m duckie_yolo.train --data data/sim_v1/dataset.yaml --epochs 60 --name sim_v1
+# (c) train YOLO11n-seg, exports ONNX. On Apple Silicon --device cpu is ~2.5x faster than mps
+#     for segmentation training: 8 epochs over the 21,951 frames took ~1.5 h on an M4 Max
+python -m duckie_yolo.train --data data/sim_v1/dataset.yaml --epochs 8 --close-mosaic 2 --device cpu --name sim_v1
+mkdir -p models && cp runs/segment/sim_v1/weights/best.pt models/
 
 # (d) drive with YOLO: live window, or a video
 python -m duckie_yolo.sim.run_sim --map small_loop --weights runs/segment/sim_v1/weights/best.pt
