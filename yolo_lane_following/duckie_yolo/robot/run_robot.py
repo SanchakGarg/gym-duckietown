@@ -106,6 +106,11 @@ def main(argv=None):
             if now - t_last >= 1.0:
                 fps = n / (now - t_last)
                 n, t_last = 0, now
+                if int(now - t0) % 5 == 0:  # console heartbeat for headless / SSH sessions
+                    e = step.estimate
+                    print(f"[run_robot] {fps:4.1f} Hz {step.state.value:14s} v={action[0]:.2f} w={action[1]:+.2f} "
+                          f"d={e.d:+.3f} phi={np.degrees(e.phi):+5.1f} src={e.source} seg={1000 * step.timings['segment']:.0f}ms",
+                          flush=True)
             if stream is not None or a.record:
                 e = step.estimate
                 lines = [
