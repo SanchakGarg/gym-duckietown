@@ -27,9 +27,21 @@ FIELDS = ["agent", "map", "episode", "steps", "survived", "done_reason", "distan
           "mean_abs_phi_deg", "est_abs_d_err", "est_abs_phi_err_deg", "out_of_lane_frac", "stop_events", "ms_per_step"]
 
 
-def run_episode(env, agent, kind, palette, steps, expert_speed):
+def reset_in_lane(env, seed: int, max_abs_d: float = 0.05, tries: int = 50):
+    """Reset until the random start pose lies in the robot's own lane (|d| <= max_abs_d)."""
     u = env.unwrapped
-    obs = env.reset()
+    for k in range(tries):
+        u.seed(seed + 7919 * k)
+        obs = env.reset()
+        gt = gt_lane_pose(env)
+        if gt is not None and abs(gt[0]) <= max_abs_d:
+            return obs
+    return obs
+
+
+def run_episode(env, agent, kind, palette, steps, expert_speed, obs=None):
+    u = env.unwrapped
+    obs = env.reset() if obs is None else obs
     if agent is not None:
         agent.reset()
     expert = PurePursuitExpert(env, ref_velocity=expert_speed) if kind == "expert" else None
@@ -103,6 +115,8 @@ def main(argv=None):
     ap.add_argument("--height", type=int, default=480)
     ap.add_argument("--out", default="runs/eval/eval.csv")
     ap.add_argument("--raw-actuation", action="store_true", help="do not compensate the sim motor dynamics")
+    ap.add_argument("--start-in-lane", action="store_true",
+                    help="re-draw random starts until the robot begins in its own lane (|d| <= 5 cm)")
     a = ap.parse_args(argv)
 
     a.oracle = a.agent == "oracle"
@@ -118,8 +132,12 @@ def main(argv=None):
                            accept_start_angle_deg=20)
             palette = object_palette(env_mesh_names(env))
             for ep in range(a.episodes):
-                env.unwrapped.seed(a.seed + 1000 * ep)
-                r = run_episode(env, agent, kind, palette, a.steps, a.expert_speed)
+                if a.start_in_lane:
+                    obs0 = reset_in_lane(env, a.seed + 1000 * ep)
+                else:
+                    env.unwrapped.seed(a.seed + 1000 * ep)
+                    obs0 = None
+                r = run_episode(env, agent, kind, palette, a.steps, a.expert_speed, obs0)
                 r.update(agent=a.agent, map=m, episode=ep)
                 rows.append(r)
                 w.writerow(r)
