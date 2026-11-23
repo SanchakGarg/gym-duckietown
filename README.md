@@ -28,6 +28,16 @@ This simulator was created as part of work done at [Mila](https://mila.quebec/).
 Welcome to <b>Duckietown</b>!
 </h2>
 
+## YOLO lane following (this fork)
+
+[`yolo_lane_following/`](yolo_lane_following/) adds a Duckiebot lane-following agent based on a
+**YOLO11n-seg** lane-marking model. The model is trained on auto-labelled gym-duckietown images
+(the segmentation render is the ground truth). The agent runs **unchanged on a physical
+Duckiebot** (Jetson Orin Nano) **without ROS or the Duckietown software stack**. The fork also
+fixes several simulator issues: macOS rendering, segment renders with objects, gym>=0.22 RNGs,
+and segmentation textures that did not line up with the RGB render. See
+[`yolo_lane_following/README.md`](yolo_lane_following/README.md).
+
 ## Introduction
 
 Gym-Duckietown is a simulator for the [Duckietown](https://duckietown.org) Universe, written in pure Python/OpenGL (Pyglet). It places your agent, a Duckiebot, inside of an instance of a Duckietown: a loop of roads with turns, intersections, obstacles, Duckie pedestrians, and other Duckiebots. It can be a pretty hectic place!
