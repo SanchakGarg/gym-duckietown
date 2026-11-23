@@ -1,0 +1,17 @@
+# Simulation / training environment (Python 3.8; tested on macOS arm64 with
+# pip<24.1, setuptools<66, wheel<0.40 for the legacy sdists).
+numpy==1.23.5
+pyglet==1.5.27
+gym==0.26.2
+opencv-python<4.11
+duckietown-world-daffy
+carnivalmirror==0.6.2
+PyGeometry-z6
+zuper-commons-z6
+pyzmq
+pyyaml
+torch==2.4.1
+torchvision==0.19.1
+ultralytics>=8.3
+pytest
+smbus2

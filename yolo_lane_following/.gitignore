@@ -1,0 +1,11 @@
+data/
+runs/
+models/
+*.pt
+*.onnx
+*.engine
+*.mp4
+.pytest_cache/
+__pycache__/
+*.egg-info/
+yolo11n*.pt

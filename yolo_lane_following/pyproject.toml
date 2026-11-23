@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "duckie-yolo"
+version = "0.1.0"
+description = "YOLO-seg lane following for Duckietown: gym-duckietown training/eval + a ROS-free pipeline for a real Duckiebot (Jetson Orin Nano)"
+readme = "README.md"
+requires-python = ">=3.8"
+# OpenCV is intentionally not a hard dependency: on the Jetson use the JetPack OpenCV
+# (built with GStreamer); elsewhere install opencv-python.
+dependencies = ["numpy>=1.20", "pyyaml", "pyzmq"]
+
+[project.optional-dependencies]
+# simulation: also install gym-duckietown from the repository root (pip install -e ..)
+sim = ["opencv-python", "ultralytics>=8.3"]
+train = ["opencv-python", "ultralytics>=8.3"]
+agent = ["ultralytics>=8.3"]
+robot = ["smbus2", "Jetson.GPIO; platform_machine == 'aarch64'"]
+dev = ["pytest", "opencv-python"]
+
+[project.scripts]
+duckie-gen-dataset = "duckie_yolo.sim.generate_dataset:main"
+duckie-train = "duckie_yolo.train:main"
+duckie-run-sim = "duckie_yolo.sim.run_sim:main"
+duckie-eval-sim = "duckie_yolo.sim.eval_sim:main"
+duckie-robot-io = "duckie_yolo.robot.robot_io:main"
+duckie-run-robot = "duckie_yolo.robot.run_robot:main"
+
+[tool.setuptools.packages.find]
+include = ["duckie_yolo*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
