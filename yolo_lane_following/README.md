@@ -100,6 +100,35 @@ Notes:
 * On macOS the simulator needs a logged-in GUI session with the display awake. It cannot
   render from a plain SSH session.
 
+### Linux / Windows (WSL2)
+
+On Windows, use **WSL2 with Ubuntu 22.04**. On Windows 11, WSLg shows the simulator windows
+directly. Native Windows is not supported. In PowerShell: `wsl --install -d Ubuntu-22.04`, then `wsl --update`.
+
+```bash
+sudo apt update && sudo apt install -y git curl build-essential libgl1 libgl1-mesa-dri libglu1-mesa \
+    libegl1 mesa-utils libglib2.0-0 libsm6 libxext6 libxrender1 xvfb
+curl -LsSf https://astral.sh/uv/install.sh | sh && source $HOME/.local/bin/env
+
+git clone -b yolo-lane-following https://github.com/SanchakGarg/gym-duckietown.git
+cd gym-duckietown
+uv venv --python 3.8 .venv && source .venv/bin/activate
+uv pip install "pip<24.1" "setuptools<66" "wheel<0.40"
+# no NVIDIA GPU in WSL? install the small CPU build of PyTorch first:
+python -m pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cpu
+python -m pip install --no-build-isolation -r yolo_lane_following/requirements-sim.txt
+python -m pip install --no-build-isolation --no-deps -e . -e yolo_lane_following
+pytest yolo_lane_following/tests
+
+# trained weights are not in git: put best.pt into yolo_lane_following/models/
+cd yolo_lane_following
+export DUCKIETOWN_PYGLET_HEADLESS=0      # render through the X display (WSLg) instead of EGL
+python -m duckie_yolo.sim.run_sim --map udem1 --weights models/best.pt --device cpu --start-angle 15 --top-down
+```
+* **No window** (no WSLg, or a server): run `xvfb-run -a -s "-screen 0 1280x1024x24" python -m duckie_yolo.sim.run_sim ... --no-show --video out.mp4`.
+* **NVIDIA GPU:** use `--device 0` when `python -c "import torch; print(torch.cuda.is_available())"` prints `True`.
+* **Talking to the robot from WSL:** use its IP address, because `<name>.local` usually does not resolve inside WSL.
+
 ### Simulator fixes in this fork (`src/gym_duckietown`)
 * `check_hw.py` forced pyglet into EGL headless mode on every OS, so the simulator never started on macOS.
 * Segment renders of maps with objects crashed: unhashable colour lists were passed to the `lru_cache`d `load_texture`.
