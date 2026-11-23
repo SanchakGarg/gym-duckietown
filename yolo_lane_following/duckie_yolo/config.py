@@ -61,6 +61,7 @@ class BehaviorConfig:
     cross_duration: float = 2.2  # s of driving straight after the stop
     cross_speed: float = 0.25
     stopline_cooldown: float = 3.0  # s during which red lines are ignored after crossing
+    cross_actuator_tau: float = 0.27  # s, actuator lag assumed when dead-reckoning through intersections
     enable_obstacles: bool = True
     obstacle_trigger_x: float = 0.40  # m
     obstacle_lane_margin: float = 0.16  # |y_obstacle - lane_center| below which it blocks us

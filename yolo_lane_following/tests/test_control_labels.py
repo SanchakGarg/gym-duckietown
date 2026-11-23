@@ -193,3 +193,53 @@ def test_yolo_result_to_masks_without_weights():
     assert out.work_size == (320, 240)
     assert out.class_masks[YELLOW][175, 60] and not out.class_masks[YELLOW][100, 60]
     assert len(out.instances) == 1 and out.instances[0].cls == DUCKIE
+
+
+def test_cross_follows_virtual_lane_measured_at_stop_line():
+    from duckie_yolo.control.behavior import VirtualLane
+
+    cfg = BehaviorConfig(stop_duration=1.0, cross_duration=2.0)
+    fsm = BehaviorFSM(cfg)
+    # lane centre ahead bends to the robot's left (robot is turned ~11 deg right of the lane)
+    lane = np.array([0.0, 0.2, 0.0])
+    red = LaneEstimate(valid=True, center=lane, stopline_x=0.18)
+    assert fsm.update(red, (0.3, 0.0), 0.0, False)[2] == State.STOP_LINE_WAIT
+    fsm.update(red, (0.3, 0.0), 0.5, False)
+    v, w, s = fsm.update(LaneEstimate(), (0.0, 0.0), 1.1, False)  # crossing: lane no longer visible
+    assert s == State.CROSS and v == cfg.cross_speed and w > 0.05  # steers left, towards the lane
+
+    # dead reckoning: driving along a straight lane keeps the target on the lane
+    vl = VirtualLane(np.array([0.0, 0.0, 0.05]))  # lane 5 cm to the left, parallel
+    for _ in range(10):
+        vl.move(0.3, 0.0, 0.033)
+    tx, ty = vl.target(0.3)
+    assert abs(ty - 0.05) < 1e-6 and tx > 0
+
+
+def test_lone_white_line_left_edge_is_disambiguated_by_tracking():
+    from duckie_yolo.estimation.lane_estimator import LaneEstimator
+
+    est = LaneEstimator(CameraModel.sim_default(), AgentConfig().estimator, AgentConfig().lane)
+    cfg = AgentConfig()
+    # track a centred lane first (both lines visible)
+    for _ in range(3):
+        e = est.estimate(segmentation_from_label_map(render_lane(0.0, 0.0), cfg.estimator.work_scale))
+    assert e.valid and abs(e.d) < 0.02
+    # now only a white line 25 cm to the LEFT is visible. As our right edge it would put the
+    # centre at +0.40 m; as the road's left edge, at 0.25 - 0.384 = -0.13 m (consistent with tracking)
+    lm = render_lane(0.40, 0.0, yellow=False)
+    e = est.estimate(segmentation_from_label_map(lm, cfg.estimator.work_scale))
+    assert e.valid and e.source == "white(left edge)"
+    assert -0.15 < e.d < 0.0  # stays near the tracked centre instead of jumping to +0.40 m
+
+
+def test_stopline_heading_from_red_line_orientation():
+    from duckie_yolo.estimation.lane_estimator import LaneEstimator
+
+    cfg = AgentConfig()
+    for phi in (0.0, 0.2, -0.15):
+        est = LaneEstimator(CameraModel.sim_default(), cfg.estimator, cfg.lane)
+        e = est.estimate(segmentation_from_label_map(render_lane(0.0, phi, red_at=0.25), cfg.estimator.work_scale))
+        assert e.stopline_heading is not None
+        # robot heading phi to the right of the lane -> lane direction is +phi (left) in the robot frame
+        assert abs(e.stopline_heading - phi) < math.radians(4), (phi, e.stopline_heading)

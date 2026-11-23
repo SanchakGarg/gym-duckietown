@@ -88,6 +88,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--agent", default="yolo", choices=["yolo", "color", "oracle", "expert"])
     ap.add_argument("--weights", default="")
+    ap.add_argument("--device", default=None, help="YOLO inference device: cpu | mps | 0")
     ap.add_argument("--agent-config", default="")
     ap.add_argument("--maps", nargs="+", default=["loop_empty", "small_loop", "zigzag_dists"])
     ap.add_argument("--episodes", type=int, default=5)

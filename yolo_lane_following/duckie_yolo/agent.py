@@ -36,7 +36,7 @@ class LaneFollowingAgent:
         self.camera = camera
         self.estimator = LaneEstimator(camera, self.cfg.estimator, self.cfg.lane)
         self.controller = PurePursuitController(self.cfg.controller)
-        self.fsm = BehaviorFSM(self.cfg.behavior)
+        self.fsm = BehaviorFSM(self.cfg.behavior, self.cfg.controller.lookahead)
         self.reset()
 
     def reset(self) -> None:

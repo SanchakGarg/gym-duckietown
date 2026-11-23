@@ -49,6 +49,9 @@ class LaneEstimate:
     yellow: Optional[PolyFit] = None
     white: Optional[PolyFit] = None
     stopline_x: Optional[float] = None
+    # direction of the lane beyond the stop line (rad, robot frame, + = left): the stop line is
+    # perpendicular to the lane, so its normal gives the crossing direction
+    stopline_heading: Optional[float] = None
     obstacles: List[Tuple[int, float, float]] = field(default_factory=list)  # (cls, x, y)
     points: Dict[int, np.ndarray] = field(default_factory=dict)  # ground points per class (viz)
 
@@ -213,7 +216,20 @@ class LaneEstimator:
         if fy is not None:
             cands.append(("yellow", self._offset_points(fy, -self.lane.yellow_offset), fy.n_inliers))
         if fw is not None:
-            cands.append(("white", self._offset_points(fw, +self.lane.white_offset), fw.n_inliers))
+            white_off = +self.lane.white_offset
+            if fy is None and self._ema is not None:
+                # A lone white line is ambiguous: our right edge, or the left edge of the road (seen
+                # when turned left / drifting into the opposite lane). Pick the hypothesis that is
+                # consistent with the lane centre we were tracking. (A lone yellow line is not
+                # ambiguous: our lane is always to its right.)
+                left_edge_off = -(self.lane.white_offset + 2.0 * self.lane.yellow_offset)
+                x_ref = float(np.clip(0.5 * (fw.x_lo + fw.x_hi), c.x_min, c.x_max))
+                prev = float(np.polyval(self._ema, x_ref))
+                y_w = float(fw.y(x_ref))
+                if abs(y_w + left_edge_off - prev) < abs(y_w + white_off - prev):
+                    white_off = left_edge_off
+                    est.source = "white(left edge)"
+            cands.append(("white", self._offset_points(fw, white_off), fw.n_inliers))
 
         if len(cands) == 2:
             cy = self._fit_center(cands[0][1], np.ones(len(cands[0][1])), 1)
@@ -228,7 +244,8 @@ class LaneEstimator:
             pts = np.vstack([p for _, p, _ in cands])
             wts = np.concatenate([np.full(len(p), float(n)) for _, p, n in cands])
             meas = _pad_poly(self._fit_center(pts, wts, c.poly_degree))
-            est.source = "both" if len(cands) == 2 else cands[0][0]
+            if est.source != "white(left edge)":
+                est.source = "both" if len(cands) == 2 else cands[0][0]
 
         if meas is not None:
             self._misses = 0
@@ -274,6 +291,13 @@ class LaneEstimator:
         p = p_r[np.abs(p_r[:, 1] - yc) < self.cfg.stopline_corridor]
         if len(p) >= self.cfg.min_red_points:
             est.stopline_x = float(np.percentile(p[:, 0], 10))
+            # orientation of the nearest red line: fit x = a + b*y (the line runs across the lane)
+            near = p[p[:, 0] < est.stopline_x + 0.08]
+            if len(near) >= self.cfg.min_red_points and np.ptp(near[:, 1]) > 0.08:
+                fit = ransac_polyfit(near[:, 1], near[:, 0], 1, self.cfg.ransac_iters, 0.015, self.rng)
+                if fit is not None:
+                    b = float(fit.coeffs[0])
+                    est.stopline_heading = -math.atan(b)
 
     def _parse_obstacles(self, seg: Segmentation, est: LaneEstimate) -> None:
         s = seg.work_scale

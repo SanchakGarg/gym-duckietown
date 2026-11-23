@@ -26,6 +26,8 @@ def build_agent(args, cfg=None):
         cfg.segmenter.weights = args.weights
     if getattr(args, "speed", None):
         cfg.controller.v_ref = args.speed
+    if getattr(args, "device", None):
+        cfg.segmenter.device = args.device
     if getattr(args, "no_stoplines", False):
         cfg.behavior.enable_stoplines = False
     if getattr(args, "no_obstacles", False):
@@ -103,6 +105,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--map", default="small_loop")
     ap.add_argument("--weights", default="")
+    ap.add_argument("--device", default=None, help="YOLO inference device: cpu | mps | 0")
     ap.add_argument("--segmenter", default=None, choices=["yolo", "color"])
     ap.add_argument("--oracle", action="store_true", help="use ground-truth masks from the segmentation render")
     ap.add_argument("--agent-config", default="")
@@ -113,6 +116,8 @@ def main(argv=None):
     ap.add_argument("--steps", type=int, default=1500)
     ap.add_argument("--episodes", type=int, default=1)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--start-angle", type=float, default=45.0,
+                    help="max heading error (deg) of the random start pose (simulator default 45)")
     ap.add_argument("--width", type=int, default=640)
     ap.add_argument("--height", type=int, default=480)
     ap.add_argument("--video", default="")
@@ -124,7 +129,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
 
     agent, kind = build_agent(a)
-    env = make_env(a.map, seed=a.seed, domain_rand=a.domain_rand, max_steps=a.steps, width=a.width, height=a.height)
+    env = make_env(a.map, seed=a.seed, domain_rand=a.domain_rand, max_steps=a.steps, width=a.width, height=a.height,
+                   accept_start_angle_deg=a.start_angle)
     palette = object_palette(env_mesh_names(env))
     writer = None
     log = open(a.log_csv, "w") if a.log_csv else None
