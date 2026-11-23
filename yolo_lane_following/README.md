@@ -51,6 +51,11 @@ pytest yolo_lane_following/tests
 ```
 
 Notes:
+* Working over SSH on macOS: the simulator has no window server there (pyglet finds no
+  screens). Run it from a terminal on the Mac itself. Alternatively, launch the command inside
+  the logged-in GUI session (e.g. via a small `osacompile` applet and `open`), keep the display
+  awake with `caffeinate -d -u`, and keep that copy outside `~/Desktop` / `~/Documents`, which
+  macOS privacy protection blocks for such processes.
 * daffy's gym-duckietown needs `gym>=0.22` (it calls `np_random.integers`). `numpy<1.24`
   and `pyglet 1.5.x` are required.
 * On macOS the simulator needs a logged-in GUI session with the display awake. It cannot
