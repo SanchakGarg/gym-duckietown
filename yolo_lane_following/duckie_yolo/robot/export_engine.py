@@ -24,7 +24,15 @@ def main(argv=None):
 
     from ultralytics import YOLO
 
-    path = YOLO(a.weights).export(format="engine", imgsz=a.imgsz, half=not a.fp32, device=0, workspace=a.workspace, simplify=True)
+    kw = dict(format="engine", imgsz=a.imgsz, device=0, workspace=a.workspace, simplify=True)
+    model = YOLO(a.weights)
+    if a.fp32:
+        path = model.export(**kw)
+    else:
+        try:  # Ultralytics >= 8.4: `quantize` replaces the deprecated `half`
+            path = model.export(**kw, quantize=16)
+        except (SyntaxError, TypeError, KeyError):
+            path = model.export(**kw, half=True)
     print(f"[export] engine: {path}")
     if a.benchmark:
         m = YOLO(path, task="segment")

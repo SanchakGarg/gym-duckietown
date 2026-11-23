@@ -89,7 +89,9 @@ class YoloSegmenter:
         self.cfg = cfg
         self.work_scale = work_scale
         self.model = YOLO(cfg.weights, task="segment")
-        self._kw = dict(imgsz=cfg.imgsz, conf=cfg.conf, iou=cfg.iou, verbose=False, half=cfg.half)
+        # FP16 is baked into TensorRT engines at export time (robot/export_engine.py); passing
+        # `half` at predict time is deprecated in recent Ultralytics and warns on every frame.
+        self._kw = dict(imgsz=cfg.imgsz, conf=cfg.conf, iou=cfg.iou, verbose=False)
         if cfg.device:
             self._kw["device"] = cfg.device
         self.names = getattr(self.model, "names", None)

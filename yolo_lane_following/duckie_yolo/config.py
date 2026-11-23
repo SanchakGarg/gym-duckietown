@@ -75,7 +75,7 @@ class SegmenterConfig:
     conf: float = 0.35
     iou: float = 0.5
     device: str = ""  # "" = auto (cuda:0 / mps / cpu)
-    half: bool = False
+    half: bool = False  # informational: FP16 comes from the TensorRT engine export
 
 
 @dataclass
