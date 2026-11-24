@@ -128,6 +128,9 @@ python -m duckie_yolo.sim.run_sim --map udem1 --weights models/best.pt --device 
 * **No window** (no WSLg, or a server): run `xvfb-run -a -s "-screen 0 1280x1024x24" python -m duckie_yolo.sim.run_sim ... --no-show --video out.mp4`.
 * **NVIDIA GPU:** use `--device 0` when `python -c "import torch; print(torch.cuda.is_available())"` prints `True`.
 * **Talking to the robot from WSL:** use its IP address, because `<name>.local` usually does not resolve inside WSL.
+* **ROS sourced in your shell** (e.g. `/opt/ros/jazzy/setup.bash` in `~/.bashrc`): its Python 3.12 packages land on
+  `PYTHONPATH` and break the Python 3.8 venv. pytest, for example, fails with `No module named 'lark'` from `launch_testing`.
+  Run `echo 'unset PYTHONPATH' >> .venv/bin/activate` once, or use a shell without ROS. duckie_yolo itself never uses ROS.
 
 ### Simulator fixes in this fork (`src/gym_duckietown`)
 * `check_hw.py` forced pyglet into EGL headless mode on every OS, so the simulator never started on macOS.
