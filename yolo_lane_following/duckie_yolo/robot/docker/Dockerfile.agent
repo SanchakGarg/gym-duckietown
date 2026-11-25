@@ -10,6 +10,8 @@
 # drive:
 #   docker run --rm -it --runtime nvidia --network host --ipc host -v $PWD:/work -w /work \
 #       duckie-yolo-agent --weights models/best.engine --robot-config configs/robot_mybot.yaml
+# web interface (camera, models, teleop + recording, calibration), normally via:
+#   bash duckie_yolo/robot/webui/start_webui.sh
 ARG JETPACK=6
 FROM ultralytics/ultralytics:latest-jetson-jetpack${JETPACK}
 
