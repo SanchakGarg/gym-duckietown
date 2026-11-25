@@ -193,6 +193,8 @@ bash duckie_yolo/robot/setup_orin.sh          # asks before every change; lists 
 python3 -m duckie_yolo.robot.robot_io --hw-test        # LIFT THE ROBOT: spins each wheel, saves a camera frame
 python3 -m duckie_yolo.robot.robot_io                  # serve camera + wheels on :7777 (watchdog 0.5 s, duty cap 0.8)
 ```
+Watch the camera from a laptop (the wheels never move; `robot_io` serves one client at a time):
+`python -m duckie_yolo.robot.view_camera --host <robot>.local [--robot-config configs/robot_mybot.yaml]`.
 
 **Calibrate.** This can run from a laptop with `--host <robot>.local`.
 ```bash
@@ -237,7 +239,7 @@ duckie_yolo/
   estimation/           lane_estimator.py (ground points, RANSAC fits, lane centre, stop line, obstacles)
   control/              pure_pursuit.py, behavior.py (FSM), kinematics.py (= DuckietownEnv.step)
   sim/                  generate_dataset.py, labels.py, expert.py, run_sim.py, eval_sim.py
-  robot/                robot_io.py, real_env.py, run_robot.py, calibrate_*.py, teleop_collect.py,
+  robot/                robot_io.py, real_env.py, run_robot.py, view_camera.py, calibrate_*.py, teleop_collect.py,
                         autolabel_real.py, export_engine.py, setup_orin.sh, docker/Dockerfile.agent, hw/
   train.py              Ultralytics training + export
 configs/                agent.yaml, agent_real.yaml, robot_default.yaml
