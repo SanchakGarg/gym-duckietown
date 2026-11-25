@@ -85,6 +85,8 @@ def main(argv=None):
     robot = RobotConfig.load(a.robot_config)
     cam = robot.camera_model()
     env = RealRobotEnv(a.host, a.port, robot.wheels, encoding="jpeg", jpeg_quality=90)
+    if robot.motors:
+        env.configure(robot.motors)  # start power / kick / PID from the robot config
     os.makedirs(a.out, exist_ok=True)
     term = None
     if not a.no_terminal_keys and sys.stdin.isatty():

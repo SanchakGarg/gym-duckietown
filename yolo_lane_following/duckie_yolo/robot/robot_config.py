@@ -32,6 +32,7 @@ class RobotConfig:
     wheels: WheelCalibration = field(default_factory=WheelCalibration)
     actuation: ActuationConfig = field(default_factory=ActuationConfig)
     calibrated: dict = field(default_factory=lambda: {"intrinsics": False, "extrinsics": False, "wheels": False})
+    motors: dict = field(default_factory=dict)  # robot/drive.py MotorTuning (start power, kick, PID), sent to robot_io
 
     def camera_model(self) -> CameraModel:
         if self.camera:
@@ -47,6 +48,7 @@ class RobotConfig:
             "wheels": dataclasses.asdict(self.wheels),
             "actuation": dataclasses.asdict(self.actuation),
             "camera": self.camera or default_camera_model().to_dict(),
+            "motors": self.motors,
         }
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         with open(path, "w") as f:
@@ -66,7 +68,19 @@ class RobotConfig:
             wheels=WheelCalibration(**(d.get("wheels") or {})),
             actuation=ActuationConfig(**(d.get("actuation") or {})),
             calibrated=d.get("calibrated") or {"intrinsics": False, "extrinsics": False, "wheels": False},
+            motors=d.get("motors") or {},
         )
+
+    def pid_active(self) -> bool:
+        """The gyro PID holds the commanded yaw rate, so no open-loop omega gain is needed then."""
+        m = self.motors or {}
+        return bool(m.get("pid_enabled") and m.get("imu_calibrated"))
+
+    def effective_actuation(self) -> ActuationConfig:
+        a = ActuationConfig(**dataclasses.asdict(self.actuation))
+        if self.pid_active():
+            a.omega_gain = 1.0
+        return a
 
 
 def default_camera_model(width: int = 640, height: int = 480) -> CameraModel:

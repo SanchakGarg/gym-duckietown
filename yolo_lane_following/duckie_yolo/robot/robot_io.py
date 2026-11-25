@@ -4,6 +4,10 @@ Runs natively on the robot (Jetson Orin Nano / Nano / Raspberry Pi). It owns the
 the wheel motors and serves them over ZMQ (see protocol.py) to the agent, which can run on
 the robot itself (localhost, e.g. inside the Ultralytics JetPack container) or on a laptop.
 
+Closed loop (robot/drive.py): every wheel command passes through a 100 Hz drive controller with
+per-wheel start power, a start kick and, with the IMU gyro, a yaw-rate PID. Clients set it with
+the "configure" command; "drive_task" runs the IMU / start-power self-tests.
+
 Safety:
   * watchdog: wheels are released if no command arrives for --watchdog seconds
   * --max-duty caps the wheel duty cycle
@@ -35,6 +39,22 @@ def build_wheels(args):
     return Wheels.open(args.i2c_bus, args.i2c_addr, args.hat, **kw)
 
 
+def build_drive(args, wheels):
+    """Drive controller with the IMU gyro if one answers on the HAT's I2C bus."""
+    from .drive import DriveController
+
+    imu = None
+    if not getattr(args, "mock_wheels", False) and not getattr(args, "no_imu", False):
+        try:
+            from .hw.imu import GyroZ
+
+            imu = GyroZ.open(args.i2c_bus, args.imu_addr)
+            print(f"[robot_io] IMU {imu.chip} at 0x{args.imu_addr:02x}: yaw-rate PID available")
+        except Exception as e:
+            print(f"[robot_io] no IMU ({e}): start power + kick only, no PID")
+    return DriveController(wheels, imu)
+
+
 def hw_test(args, wheels, cam) -> None:
     import cv2
 
@@ -55,8 +75,13 @@ def hw_test(args, wheels, cam) -> None:
         print(f"[hw-test] saved camera frame {frame.shape} -> {args.hw_test_image}")
 
 
-def serve(args, wheels, cam) -> None:
+def serve(args, wheels, cam, drive=None) -> None:
     import zmq
+
+    from .drive import DriveController
+
+    if drive is None:
+        drive = DriveController(wheels)
 
     ctx = zmq.Context.instance()
     sock = ctx.socket(zmq.PAIR)
@@ -92,15 +117,30 @@ def serve(args, wheels, cam) -> None:
             cmd = msg.get("command", "")
             if cmd == "action":
                 vals = msg.get("values", [0.0, 0.0])
-                wheels.set(float(vals[0]), float(vals[1]))
+                wref = msg.get("omega_ref")
+                drive.command(float(vals[0]), float(vals[1]), None if wref is None else float(wref))
                 wheels_active = True
                 last_cmd = now
             elif cmd in ("reset", "stop"):
-                wheels.stop()
+                drive.stop()
                 wheels_active = False
                 last_cmd = now
             elif cmd == "ping":
                 sock.send_json({"pong": True, "req_id": msg.get("req_id")})
+                continue
+            elif cmd == "configure":
+                try:
+                    t = drive.configure(msg.get("tuning") or {})
+                    sock.send_json({"ok": True, "tuning": t.to_dict(), "drive": drive.status(), "req_id": msg.get("req_id")})
+                except Exception as e:
+                    sock.send_json({"ok": False, "error": str(e), "req_id": msg.get("req_id")})
+                continue
+            elif cmd == "drive_task":
+                try:
+                    task = drive.start_task(str(msg.get("task", "")))
+                    sock.send_json({"ok": True, "task": task, "req_id": msg.get("req_id")})
+                except Exception as e:
+                    sock.send_json({"ok": False, "error": str(e), "req_id": msg.get("req_id")})
                 continue
             if cmd in ("reset", "action"):
                 frame, stamp, seq = cam.latest(after_seq=int(msg.get("after_seq", -1)), timeout=args.frame_timeout)
@@ -108,16 +148,18 @@ def serve(args, wheels, cam) -> None:
                     sock.send_json({"error": f"no camera frame ({cam.error})", "req_id": msg.get("req_id")})
                     continue
                 md, payload = encode_frame(frame, msg.get("encoding", "raw"), int(msg.get("quality", 80)))
-                md.update(seq=seq, stamp=stamp, req_id=msg.get("req_id"), wheels=list(wheels.last))
+                md.update(seq=seq, stamp=stamp, req_id=msg.get("req_id"), wheels=list(wheels.last), drive=drive.status())
                 sock.send_json(md, zmq.SNDMORE)
                 sock.send(payload, copy=False)
                 n_req += 1
         if wheels_active and now - last_cmd > args.watchdog:
-            wheels.stop()
+            drive.stop()
             wheels_active = False
             print("[robot_io] watchdog: no command received, wheels released")
         if now - t_report > 10.0:
-            print(f"[robot_io] {n_req / (now - t_report):.1f} req/s, wheels={wheels.last}, cam_err={cam.error}")
+            st = drive.status()
+            print(f"[robot_io] {n_req / (now - t_report):.1f} req/s, wheels={wheels.last}, yaw rate={st['wz']:+.2f} rad/s, "
+                  f"cam_err={cam.error}")
             n_req, t_report = 0, now
     print("[robot_io] shutting down")
     sock.close()
@@ -144,6 +186,8 @@ def main(argv=None):
     ap.add_argument("--watchdog", type=float, default=0.5)
     ap.add_argument("--frame-timeout", type=float, default=0.15)
     ap.add_argument("--mock-wheels", action="store_true", help="do not touch I2C/GPIO")
+    ap.add_argument("--no-imu", action="store_true", help="do not use the IMU gyro (no yaw-rate PID)")
+    ap.add_argument("--imu-addr", type=lambda s: int(s, 0), default=0x68)
     ap.add_argument("--hw-test", action="store_true")
     ap.add_argument("--hw-test-image", default="hw_test_frame.jpg")
     args = ap.parse_args(argv)
@@ -154,7 +198,11 @@ def main(argv=None):
         if args.hw_test:
             hw_test(args, wheels, cam)
         else:
-            serve(args, wheels, cam)
+            drive = build_drive(args, wheels)
+            try:
+                serve(args, wheels, cam, drive)
+            finally:
+                drive.close()
     finally:
         wheels.close()
         cam.stop()

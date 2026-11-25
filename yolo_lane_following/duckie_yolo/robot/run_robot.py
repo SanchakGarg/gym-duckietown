@@ -69,10 +69,12 @@ def main(argv=None):
         print(f"[run_robot] WARNING: robot not fully calibrated {robot.calibrated} - using defaults where missing")
     camera = robot.camera_model()
     if cfg.actuation == type(cfg.actuation)():
-        cfg.actuation = robot.actuation  # from calibrate_wheels (--distance / --rotate)
+        cfg.actuation = robot.effective_actuation()  # from calibrate_wheels / the web UI (omega gain 1 with the PID)
     segmenter = build_segmenter(cfg.segmenter, cfg.estimator.work_scale, a.segmenter)
     agent = LaneFollowingAgent(segmenter, camera, cfg)
     env = RealRobotEnv(a.host, a.port, robot.wheels, encoding=a.encoding)
+    if robot.motors and env.configure(robot.motors) is None:
+        print("[run_robot] WARNING: robot_io did not accept the motor tuning (old robot_io? restart it after git pull)")
 
     stream = None
     if a.stream_port:

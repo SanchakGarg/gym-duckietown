@@ -75,14 +75,48 @@ class RealRobotEnv:
         self.last_seq = -1
         return self._request({"command": "reset"})
 
-    def wheels(self, left: float, right: float) -> np.ndarray:
-        return self._request({"command": "action", "values": [float(left), float(right)]})
+    def wheels(self, left: float, right: float, omega_ref: Optional[float] = None) -> np.ndarray:
+        msg = {"command": "action", "values": [float(left), float(right)]}
+        if omega_ref is not None:
+            msg["omega_ref"] = float(omega_ref)  # lets robot_io's gyro PID hold this yaw rate
+        return self._request(msg)
 
     def step(self, action) -> Tuple[np.ndarray, float, bool, dict]:
         v, omega = float(action[0]), float(action[1])
         left, right = twist_to_wheels(v, omega, self.cal)
-        obs = self.wheels(left, right)
+        obs = self.wheels(left, right, omega)
         return obs, 0.0, False, {"wheels": (left, right), "robot": self.last_md}
+
+    def rpc(self, msg: dict, timeout_ms: Optional[int] = None) -> Optional[dict]:
+        """Command answered with JSON only (configure / drive_task). None if robot_io does not answer
+        (e.g. an older robot_io without that command)."""
+        rid = next(self._ids)
+        self.sock.send_json(dict(msg, req_id=rid))
+        if timeout_ms is not None:
+            self.sock.setsockopt(self.zmq.RCVTIMEO, timeout_ms)
+        try:
+            while True:
+                try:
+                    md = self.sock.recv_json()
+                except self.zmq.Again:
+                    self._connect()
+                    return None
+                if "dtype" in md or "shape" in md:  # a late frame reply: drop its payload too
+                    self.sock.recv()
+                    continue
+                if md.get("req_id") in (rid, None):
+                    return md
+        finally:
+            if timeout_ms is not None:
+                self.sock.setsockopt(self.zmq.RCVTIMEO, self.timeout_ms)
+
+    def configure(self, tuning: dict) -> Optional[dict]:
+        """Send motor tuning (start power, kick, PID; see robot/drive.py MotorTuning) to robot_io."""
+        return self.rpc({"command": "configure", "tuning": dict(tuning or {})})
+
+    def drive_task(self, task: str) -> Optional[dict]:
+        """Start a motor self-test on robot_io: "imu_calibrate" or "find_start_power"."""
+        return self.rpc({"command": "drive_task", "task": task})
 
     def stop(self) -> None:
         try:
