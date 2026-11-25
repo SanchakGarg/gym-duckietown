@@ -173,11 +173,11 @@ polygons (`duckie_yolo/sim/labels.py`).
 
 Flags: `--no-stoplines`, `--no-obstacles` (plain lane following), `--speed`, `--agent-config configs/agent.yaml`.
 
-## 3. Real Duckiebot (Jetson Orin Nano, no ROS)
+## 3. Real Duckiebot (Jetson Nano / Orin Nano, no ROS)
 
 **Hardware path.** Taken from Duckietown's `dt-duckiebot-interface` as reference only;
 nothing from it is imported or run.
-* Wheels: HATv3 → PCA9685 at I2C **0x60 on bus 7** (Orin Nano; bus 1 on Jetson Nano), 1600 Hz.
+* Wheels: HATv3 → PCA9685 at I2C **0x60 on bus 7** (Orin Nano; **bus 1 on Jetson Nano**: pass `--i2c-bus 1`), 1600 Hz.
   * Left motor: direction on PCA9685 channels 10/9, speed on channel 8.
   * Right motor: direction on Jetson GPIO **BOARD 33/31**, speed on channel 13.
   * Duty cycles map to `pwm_min 60 … pwm_max 255`, with deadzone 0.01.
@@ -187,12 +187,43 @@ nothing from it is imported or run.
 
 ```bash
 # on the robot (clone your fork there)
+git clone -b yolo-lane-following https://github.com/SanchakGarg/gym-duckietown.git
 cd gym-duckietown/yolo_lane_following
-bash duckie_yolo/robot/setup_orin.sh          # asks before every change; lists Duckietown containers holding camera/I2C
+bash duckie_yolo/robot/setup_orin.sh    # asks before every change: Python env, robot_io service, swap/clocks, web UI container
 
-python3 -m duckie_yolo.robot.robot_io --hw-test        # LIFT THE ROBOT: spins each wheel, saves a camera frame
-python3 -m duckie_yolo.robot.robot_io                  # serve camera + wheels on :7777 (watchdog 0.5 s, duty cap 0.8)
+# LIFT THE ROBOT: spins each wheel, saves a camera frame (stop the robot_io service first if it runs)
+~/dy/bin/python -m duckie_yolo.robot.robot_io --i2c-bus 1 --hw-test
 ```
+`setup_orin.sh` installs `robot_io` (camera + wheels on ZMQ :7777, watchdog 0.5 s, duty cap 0.8) as the
+`duckie-robot-io` service in a Python ≥ 3.8 env (`~/dy`). On **JetPack 4 (Jetson Nano, Ubuntu 18.04,
+Python 3.6)** it creates that env with `python3.8` and pins `Jetson.GPIO<2.1` (2.1+ needs the gpiochip
+interface of newer kernels) and `opencv-python-headless<5` (prebuilt wheels only; without GStreamer
+the camera uses a `gst-launch` pipe).
+
+### Web interface (browser only)
+Everything below can be done from a browser at **`http://<robot-ip>:8080`**; nothing runs on the laptop.
+The web UI runs on the robot in the GPU Docker container (Ultralytics + TensorRT for the JetPack) and is
+`robot_io`'s only client:
+```bash
+bash duckie_yolo/robot/webui/start_webui.sh   # build image if needed, (re)start container; restarts at boot
+docker logs -f duckie-webui                   # its log
+```
+| tab | what |
+|---|---|
+| **Drive** | live camera (raw / corrected / model view), hold-to-drive with W A S D or on-screen buttons, **record a dataset while driving** (R) |
+| **Model** | pick a model in `models/` (or colour thresholds), run it on the Jetson, "let the model drive" with a speed cap, upload models, build a TensorRT engine |
+| **Datasets** | recorded sessions (`data/real/<time>_<name>/raw` + `rect`): download as zip, re-correct after calibrating, delete |
+| **Calibrate** | lens (auto-captures checkerboard views), floor (x0 / y0, grid check image), wheels (straight + spin tests), printable checkerboard |
+| **Guidelines** | what to record, red stop lines, label classes and rules, the fine-tuning loop |
+
+Safety: the robot only moves while the page sends commands. Teleop stops 0.3 s after the last key
+event, autodrive needs a heartbeat from the open page (1 s), STOP / Space / Esc cancels everything,
+and `robot_io`'s watchdog and duty cap stay in force. The container has no memory or CPU limits (the
+Jetson GPU shares the board's RAM); `setup_orin.sh` can add swap, max clocks and a headless boot to
+leave the model as much memory as possible. Without Docker, `python -m duckie_yolo.robot.webui` runs
+the same page with colour thresholds only.
+
+### Command-line tools (alternative)
 Watch the camera from a laptop (the wheels never move; `robot_io` serves one client at a time):
 `python -m duckie_yolo.robot.view_camera --host <robot>.local [--robot-config configs/robot_mybot.yaml]`.
 
@@ -209,7 +240,7 @@ python -m duckie_yolo.robot.calibrate_wheels    --host <robot> --robot-config co
   axle to the nearest corner row, `--y0` the position of the right-most corner column. The
   script writes `*_extrinsics_check.jpg` with a 10 cm floor grid for checking.
 
-**Drive.** Run this on the Orin; inference uses TensorRT FP16.
+**Drive.** Run this on the Jetson; inference uses TensorRT FP16.
 ```bash
 mkdir -p models && cp <best.pt from training> models/best.pt
 docker run --rm -it --runtime nvidia --ipc host -v $PWD:/work -w /work --entrypoint python3 \
@@ -242,16 +273,20 @@ duckie_yolo/
   control/              pure_pursuit.py, behavior.py (FSM), kinematics.py (= DuckietownEnv.step)
   sim/                  generate_dataset.py, labels.py, expert.py, run_sim.py, eval_sim.py
   robot/                robot_io.py, real_env.py, run_robot.py, view_camera.py, calibrate_*.py, teleop_collect.py,
-                        autolabel_real.py, export_engine.py, setup_orin.sh, docker/Dockerfile.agent, hw/
+                        autolabel_real.py, export_engine.py, setup_orin.sh, docker/Dockerfile.agent, hw/,
+                        webui/ (browser interface: controller, recorder, models, calibration, static page)
   train.py              Ultralytics training + export
 configs/                agent.yaml, agent_real.yaml, robot_default.yaml
-tests/                  geometry/estimator, labels, control/FSM, PCA9685/motors, robot_io <-> client over TCP
+tests/                  geometry/estimator, labels, control/FSM, PCA9685/motors, robot_io <-> client over TCP,
+                        web UI (teleop/deadman, autodrive heartbeat, recording, uploads, calibration functions)
 ```
 
 ## Status / limitations
-* The hardware path (I2C/GPIO pins, camera pipeline) mirrors Duckietown's DB26J configuration
-  and is unit-tested against mocks, but **it has not been run on a physical robot by the author
-  of this code**. Lift the robot for the first `--hw-test`, and start in `--dry-run`.
+* The hardware path (I2C/GPIO pins, camera pipeline) mirrors Duckietown's DB21/DB26J configuration
+  and is unit-tested against mocks. `robot_io` and the camera have been brought up on a DB21
+  (Jetson Nano, JetPack 4.6); the web UI's Docker image on JetPack 4 and TensorRT engines on the
+  Nano are not verified yet. Lift the robot for the first `--hw-test`, and test models in
+  *Model view* before letting them drive.
 * Intersections are handled only as "stop at the red line, then cross straight". There is no
   turn planning.
 * The default extrinsic board offsets (`--x0 0.191 --y0 -0.093`) are a starting point. Measure
