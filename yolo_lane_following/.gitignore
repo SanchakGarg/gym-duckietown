@@ -9,3 +9,6 @@ models/
 __pycache__/
 *.egg-info/
 yolo11n*.pt
+calib/
+configs/*_rectified_sample.jpg
+configs/*_extrinsics_*.jpg

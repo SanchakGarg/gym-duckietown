@@ -27,9 +27,13 @@ duckie-run-sim = "duckie_yolo.sim.run_sim:main"
 duckie-eval-sim = "duckie_yolo.sim.eval_sim:main"
 duckie-robot-io = "duckie_yolo.robot.robot_io:main"
 duckie-run-robot = "duckie_yolo.robot.run_robot:main"
+duckie-webui = "duckie_yolo.robot.webui.__main__:main"
 
 [tool.setuptools.packages.find]
 include = ["duckie_yolo*"]
+
+[tool.setuptools.package-data]
+"duckie_yolo.robot.webui" = ["static/*", "start_webui.sh"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

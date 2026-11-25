@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Duckiebot Control</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo" aria-hidden="true"></span>Duckiebot</div>
+  <div class="pills" id="pills">
+    <span class="pill" id="pill-robot" title="connection to robot_io">robot …</span>
+    <span class="pill" id="pill-hz" title="control loop rate">– Hz</span>
+    <span class="pill" id="pill-model" title="model">no model</span>
+    <span class="pill" id="pill-disk" title="free space on the robot">– GB free</span>
+  </div>
+  <button class="stop" id="btn-stop" title="Stop everything (Space or Esc)">STOP</button>
+</header>
+
+<div class="banner" id="banner" hidden></div>
+
+<main class="layout">
+  <section class="video-col">
+    <div class="video-wrap">
+      <img id="video" alt="Robot camera" src="/stream.mjpg">
+      <div class="badge rec" id="rec-badge" hidden>● REC <span id="rec-count">0</span></div>
+      <div class="badge src" id="src-badge">idle</div>
+      <div class="badge motion" id="motion-badge" hidden></div>
+    </div>
+    <div class="video-bar">
+      <div class="seg" role="tablist" aria-label="Camera view">
+        <button data-view="raw">Raw</button>
+        <button data-view="rect">Corrected</button>
+        <button data-view="model">Model view</button>
+      </div>
+      <span class="muted small" id="cmd-readout">v 0.00 · ω 0.0</span>
+    </div>
+  </section>
+
+  <section class="panel-col">
+    <nav class="tabs" role="tablist">
+      <button data-tab="drive" class="active">Drive</button>
+      <button data-tab="model">Model</button>
+      <button data-tab="data">Datasets</button>
+      <button data-tab="calib">Calibrate</button>
+      <button data-tab="guide">Guidelines</button>
+    </nav>
+
+    <!-- ============================== DRIVE ============================== -->
+    <div class="tab" id="tab-drive">
+      <div class="card">
+        <h2>Drive</h2>
+        <div class="drive-grid">
+          <div class="dpad" aria-label="Drive buttons">
+            <span></span><button data-key="w" aria-label="forward">▲</button><span></span>
+            <button data-key="a" aria-label="left">◀</button><button class="dpad-stop" id="dpad-stop" aria-label="stop">■</button><button data-key="d" aria-label="right">▶</button>
+            <span></span><button data-key="s" aria-label="backward">▼</button><span></span>
+          </div>
+          <div class="sliders">
+            <label>Speed <output id="speed-out">0.20</output> m/s
+              <input type="range" id="speed" min="0.05" max="0.5" step="0.01" value="0.2"></label>
+            <label>Turn rate <output id="turn-out">2.5</output> rad/s
+              <input type="range" id="turn" min="0.5" max="6" step="0.1" value="2.5"></label>
+            <p class="hint">Hold <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> (or arrows) to drive ·
+              <kbd>Space</kbd>/<kbd>Esc</kbd> stop · <kbd>R</kbd> record</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Record dataset</h2>
+        <div class="row">
+          <label class="grow">Session name <input id="rec-name" placeholder="e.g. loop-daylight" maxlength="40"></label>
+          <label>Frames / s <select id="rec-hz"><option>1</option><option>2</option><option selected>3</option><option>5</option></select></label>
+        </div>
+        <button class="btn-record" id="btn-record">● Start recording</button>
+        <p class="small muted" id="rec-status">Not recording. Frames are saved on the robot (raw + corrected).</p>
+        <p class="warn small" id="rec-calib-warn" hidden>Camera lens not calibrated yet: corrected frames will be wrong.
+          You can still record. Use <em>Re-correct</em> in Datasets after calibrating.</p>
+        <details class="checklist">
+          <summary>What to record (quick checklist)</summary>
+          <ul>
+            <li>Every straight, left and right curve, and intersection, in both directions</li>
+            <li>Off-centre and angled views, and recovering from them</li>
+            <li>Red stop lines: approach slowly, stop just before, cross straight</li>
+            <li>Duckies and other robots, near and far, in both lanes</li>
+            <li>Different lighting; a few frames with no track in view</li>
+            <li>Drive slowly (0.1–0.2 m/s). 300–500 frames per setup.</li>
+          </ul>
+          <a href="#" data-goto="guide">Full guidelines →</a>
+        </details>
+      </div>
+    </div>
+
+    <!-- ============================== MODEL ============================== -->
+    <div class="tab" id="tab-model" hidden>
+      <div class="card">
+        <h2>Run a model on the robot</h2>
+        <p class="warn small" id="no-yolo" hidden>YOLO is not available: the web UI is running outside its Docker
+          container. Only colour thresholds work. Start it with <code>start_webui.sh</code> to use your models.</p>
+        <div id="model-list" class="list"></div>
+        <label>Confidence <output id="conf-out">0.35</output>
+          <input type="range" id="conf" min="0.05" max="0.8" step="0.01" value="0.35"></label>
+        <div class="row">
+          <button class="primary" id="btn-model-start">Start model</button>
+          <button id="btn-model-stop">Stop model</button>
+          <button class="danger-ghost" id="btn-model-delete" title="Delete the selected model file">Delete file</button>
+        </div>
+        <p class="small" id="model-state">No model running.</p>
+      </div>
+
+      <div class="card">
+        <h2>Let the model drive</h2>
+        <label class="switch"><input type="checkbox" id="autodrive"><span></span> Model drives the robot</label>
+        <label>Max speed <output id="maxspeed-out">0.15</output> m/s
+          <input type="range" id="maxspeed" min="0.05" max="0.4" step="0.01" value="0.15"></label>
+        <p class="small muted">Keep this page open and in front. The robot stops by itself if the page closes, the tab
+          is hidden or Wi-Fi drops. Driving with the keys overrides the model while you hold them.</p>
+      </div>
+
+      <div class="card">
+        <h2>Add a model</h2>
+        <div class="row">
+          <input type="file" id="upload-file" accept=".pt,.onnx,.engine">
+          <button id="btn-upload">Upload</button>
+        </div>
+        <progress id="upload-progress" max="100" value="0" hidden></progress>
+        <p class="small muted">Copy a trained <code>.pt</code> from your laptop to the robot's <code>models/</code> folder.</p>
+      </div>
+
+      <div class="card">
+        <h2>Speed it up: TensorRT engine</h2>
+        <p class="small">Converts the selected <code>.pt</code> into a <code>.engine</code> built for this Jetson's GPU
+          (several times faster). Takes a few minutes. The running model is stopped meanwhile.</p>
+        <div class="row">
+          <button id="btn-engine">Build engine from selected</button>
+          <button id="btn-job-cancel" hidden>Cancel</button>
+        </div>
+        <p class="small" id="job-state"></p>
+        <pre class="log" id="job-log" hidden></pre>
+      </div>
+    </div>
+
+    <!-- ============================== DATASETS ============================== -->
+    <div class="tab" id="tab-data" hidden>
+      <div class="card">
+        <h2>Recorded sessions</h2>
+        <p class="small muted">Record from the <a href="#" data-goto="drive">Drive</a> tab while you drive. Each session
+          keeps <code>raw/</code> (as captured) and <code>rect/</code> (corrected, what the model sees).</p>
+        <div id="sessions" class="list"></div>
+      </div>
+    </div>
+
+    <!-- ============================== CALIBRATE ============================== -->
+    <div class="tab" id="tab-calib" hidden>
+      <div class="card">
+        <h2>Calibration</h2>
+        <div class="chips" id="calib-chips"></div>
+        <p class="small muted">Saved to <code id="calib-file"></code>. Do the steps in order. Redo the floor
+          after re-doing the lens.</p>
+        <p class="small">Needs a checkerboard with 7×5 inner corners and 31 mm squares:
+          <a href="/checkerboard.svg" target="_blank">printable checkerboard (A4)</a>. Print at 100 %,
+          check a square is 31 mm, glue it to cardboard so it stays flat.</p>
+      </div>
+
+      <div class="card">
+        <h2>1 · Camera lens</h2>
+        <ol class="small">
+          <li>Press <em>Start capture</em>. The view switches to raw.</li>
+          <li>Hold the board in front of the camera and move it slowly: near and far, tilted, into all four corners.
+            A view is saved whenever the board is found and has moved.</li>
+          <li>At 30 views (at least 8), press <em>Calibrate lens</em>.</li>
+        </ol>
+        <div class="row">
+          <button class="primary" id="btn-intr-start">Start capture</button>
+          <button id="btn-intr-stop">Stop</button>
+          <button id="btn-intr-compute">Calibrate lens</button>
+        </div>
+        <progress id="intr-progress" max="30" value="0"></progress>
+        <p class="small" id="intr-state"></p>
+        <div class="result" id="intr-result"></div>
+      </div>
+
+      <div class="card">
+        <h2>2 · Floor</h2>
+        <svg class="diagram" viewBox="0 0 360 225" role="img" aria-label="Floor calibration: x0 from the wheel axle centre to the nearest row of inner corners, y0 to the right-most column">
+          <defs><marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" class="d-head"/></marker></defs>
+          <rect x="130" y="20" width="124" height="93" class="d-boardrect"/>
+          <g class="d-corners">
+            <circle cx="145" cy="98" r="3"/><circle cx="239" cy="98" r="3"/>
+            <circle cx="145" cy="35" r="3"/><circle cx="239" cy="35" r="3"/>
+          </g>
+          <rect x="152" y="150" width="80" height="45" rx="8" class="d-robot"/>
+          <line x1="142" y1="178" x2="242" y2="178" class="d-axle"/>
+          <circle cx="192" cy="178" r="3" class="d-dot"/>
+          <line x1="192" y1="175" x2="192" y2="102" class="d-arrow" marker-end="url(#ah)"/>
+          <text x="186" y="142" class="d-txt" text-anchor="end">x0</text>
+          <line x1="192" y1="124" x2="235" y2="124" class="d-arrow" marker-end="url(#ah)"/>
+          <text x="214" y="138" class="d-txt" text-anchor="middle">y0 (−)</text>
+          <text x="192" y="215" class="d-txt" text-anchor="middle">wheel axle centre (top view)</text>
+          <text x="262" y="96" class="d-txt">nearest row</text>
+          <text x="262" y="108" class="d-txt">of inner corners</text>
+          <text x="8" y="50" class="d-txt">board flat</text>
+          <text x="8" y="62" class="d-txt">on the floor,</text>
+          <text x="8" y="74" class="d-txt">rows parallel</text>
+          <text x="8" y="86" class="d-txt">to the axle</text>
+          <text x="192" y="13" class="d-txt" text-anchor="middle">forward ↑</text>
+        </svg>
+        <p class="small"><b>x0</b>: forward distance from the axle centre to the nearest row of <em>inner corners</em>
+          (where black squares touch), in metres. <b>y0</b>: sideways position of the right-most column of inner corners;
+          right is negative. Board centred in front of the robot → y0 = −0.093.</p>
+        <div class="row">
+          <label>x0 (m) <input type="number" id="x0" step="0.001" value="0.191"></label>
+          <label>y0 (m) <input type="number" id="y0" step="0.001" value="-0.093"></label>
+          <button class="primary" id="btn-extr">Measure floor</button>
+        </div>
+        <div class="result" id="extr-result"></div>
+      </div>
+
+      <div class="card">
+        <h2>3 · Wheels</h2>
+        <p class="small"><b>Straight:</b> put the robot on a straight tape line with about 1 m free ahead. It starts
+          2 s after you press the button.</p>
+        <div class="row">
+          <label>v (m/s) <input type="number" id="w-v" step="0.01" value="0.25"></label>
+          <label>time (s) <input type="number" id="w-dur" step="0.5" value="3"></label>
+          <button id="btn-w-straight">Drive straight</button>
+        </div>
+        <div class="row">
+          <label>drift (cm, + = ended left) <input type="number" id="w-drift" step="0.5"></label>
+          <label>distance (m) <input type="number" id="w-dist" step="0.01"></label>
+          <button class="primary" id="btn-w-apply">Apply</button>
+        </div>
+        <p class="small muted">Repeat until the drift is under about 2 cm.</p>
+        <hr>
+        <p class="small"><b>Spin:</b> mark the robot's heading. It spins in place at the given rate.</p>
+        <div class="row">
+          <label>ω (rad/s) <input type="number" id="s-omega" step="0.1" value="2.0"></label>
+          <label>time (s) <input type="number" id="s-dur" step="0.5" value="3"></label>
+          <button id="btn-s-run">Spin</button>
+        </div>
+        <div class="row">
+          <label>turned (degrees) <input type="number" id="s-deg" step="1"></label>
+          <button class="primary" id="btn-s-apply">Apply</button>
+        </div>
+        <p class="small" id="wheels-state"></p>
+      </div>
+    </div>
+
+    <!-- ============================== GUIDELINES ============================== -->
+    <div class="tab guide" id="tab-guide" hidden>
+      <div class="card">
+        <h2>Dataset guidelines</h2>
+        <p>The model was trained in the simulator. A few hundred well-labelled frames from <em>your</em> track teach
+          it what real tape, lighting and this camera look like.</p>
+
+        <h3>1. Before recording</h3>
+        <ul>
+          <li><b>Calibrate the camera lens first</b> (Calibrate tab). Frames are always saved raw too, so older
+            sessions can be fixed with <em>Re-correct</em>.</li>
+          <li>Charge the battery; wipe the camera lens.</li>
+        </ul>
+
+        <h3>2. What to record</h3>
+        <ul>
+          <li><b>300–500 frames</b> per track / lighting setup. More variety beats more frames.</li>
+          <li><b>All of the track</b>: straights, left and right curves, intersections. Drive <b>both directions</b>.</li>
+          <li><b>Mistakes and recoveries</b>: drift towards an edge, point the robot ±30° off the lane, then steer back.
+            A model that only sees perfect driving cannot recover.</li>
+          <li><b>Obstacles</b>: duckies and other duckiebots in your lane and in the other lane, near and far.</li>
+          <li><b>Lighting</b>: lights on and off, daylight, shadows across the road.</li>
+          <li><b>A few empty frames</b> (floor or walls with no track), so it learns not to see lines everywhere.</li>
+          <li><b>Drive slowly</b> (0.1–0.2 m/s): sharp frames. At 3 Hz and 0.2 m/s you get a frame every ~7 cm.</li>
+        </ul>
+
+        <h3>3. Red stop lines</h3>
+        <p>The robot stops when a red line is about 22 cm ahead, waits 2 s, then drives straight across. Record it doing
+          exactly that:</p>
+        <ol>
+          <li>Approach slowly with recording on, so the line is seen far, close and right in front.</li>
+          <li>Stop just before the line for a second or two.</li>
+          <li>Cross straight; keep recording through the middle of the intersection.</li>
+          <li>Every intersection, from every direction; some approaches off-centre or at an angle.</li>
+          <li>Also record red lines that belong to other lanes or are seen from the side.</li>
+        </ol>
+
+        <h3>4. Avoid</h3>
+        <ul>
+          <li>Fast turns (motion blur), standing in one spot while recording (duplicate frames).</li>
+          <li>Hands, feet or cables in view, a dirty or covered lens.</li>
+        </ul>
+
+        <h3>5. Labelling</h3>
+        <p>Label the corrected images (<code>rect/</code>): that is what the model sees. Use YOLO <em>segmentation</em>
+          (polygons), with exactly these classes in this order:</p>
+        <table class="classes">
+          <tr><th>id</th><th>class</th><th>what</th></tr>
+          <tr><td>0</td><td><span class="sw sw-y"></span>yellow_lane</td><td>each dash of the dashed yellow centre line</td></tr>
+          <tr><td>1</td><td><span class="sw sw-w"></span>white_lane</td><td>solid white edge lines, including the white corners at intersections</td></tr>
+          <tr><td>2</td><td><span class="sw sw-r"></span>red_stop</td><td>every red stop line in view, also those of other lanes</td></tr>
+          <tr><td>3</td><td><span class="sw sw-d"></span>duckie</td><td>rubber ducks</td></tr>
+          <tr><td>4</td><td><span class="sw sw-b"></span>duckiebot</td><td>other robots</td></tr>
+        </table>
+        <ul>
+          <li>Label every visible instance, including pieces cut off at the image edge.</li>
+          <li>Follow the tape edges tightly; leave the floor, reflections and glare unlabelled.</li>
+          <li>Never label red tape as white or yellow.</li>
+        </ul>
+
+        <h3>6. From recording to a better model</h3>
+        <ol>
+          <li>Download the session zip (Datasets tab).</li>
+          <li>Pre-label it with the current model (on the laptop):
+            <pre>python -m duckie_yolo.robot.autolabel_real --images &lt;session&gt;/rect \
+    --weights models/best.pt --out data/real/labeled</pre>
+            (or <code>--segmenter color</code>, sometimes better on clean tape; compare the previews).</li>
+          <li>Fix the masks in CVAT or Label Studio; export as YOLO segmentation into the same folder.</li>
+          <li>Fine-tune on simulator + real frames:
+            <pre>python -m duckie_yolo.train --data data/sim_v1/dataset.yaml \
+    --extra-train data/real/labeled/images --model models/best.pt \
+    --epochs 30 --device cpu --name sim_real_v1</pre></li>
+          <li>Upload <code>runs/segment/sim_real_v1/weights/best.pt</code> on the Model tab (rename it, e.g.
+            <code>real_v1.pt</code>), build its TensorRT engine, check it in <em>Model view</em> before letting it drive.</li>
+          <li>Where it still fails, record more of exactly that situation and repeat.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
