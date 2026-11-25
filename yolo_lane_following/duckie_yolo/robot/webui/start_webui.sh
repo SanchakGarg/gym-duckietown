@@ -2,25 +2,25 @@
 # Start (or restart) the Duckiebot web UI in its GPU Docker container on the Jetson.
 #
 #   cd ~/gym-duckietown/yolo_lane_following && bash duckie_yolo/robot/webui/start_webui.sh
-#   then open http://<robot-ip>:8080 in a browser
+#   then open http://<robot-ip>:5555 in a browser
 #
 # The container:
 #   * uses the GPU (--runtime nvidia) with NO memory / CPU limits. On a Jetson the GPU shares the
 #     board's RAM, so "all GPU memory" means: no container limits + as little else running as possible
 #     (setup_orin.sh can add swap, max clocks and a headless boot)
-#   * shares the host network: it reaches robot_io on localhost:7777 and serves :8080
+#   * shares the host network: it reaches robot_io on localhost:7777 and serves :5555
 #   * restarts by itself after crashes and reboots (--restart unless-stopped)
 #   * runs the code from this folder (bind mount): after `git pull` just run this script again
 #
 # Options (environment variables):
-#   PORT=8080  ROBOT_CONFIG=configs/robot_mybot.yaml  IMAGE=duckie-yolo-agent  REBUILD=1  FOLLOW_LOGS=1
+#   PORT=5555  ROBOT_CONFIG=configs/robot_mybot.yaml  IMAGE=duckie-yolo-agent  REBUILD=1  FOLLOW_LOGS=1
 #   ROBOT_IO_HOST=localhost
 set -euo pipefail
 
 PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"   # .../yolo_lane_following
 IMAGE="${IMAGE:-duckie-yolo-agent}"
 NAME="${NAME:-duckie-webui}"
-PORT="${PORT:-8080}"
+PORT="${PORT:-5555}"
 ROBOT_CONFIG="${ROBOT_CONFIG:-configs/robot_mybot.yaml}"
 ROBOT_IO_HOST="${ROBOT_IO_HOST:-localhost}"
 

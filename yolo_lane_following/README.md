@@ -201,7 +201,7 @@ interface of newer kernels) and `opencv-python-headless<5` (prebuilt wheels only
 the camera uses a `gst-launch` pipe).
 
 ### Web interface (browser only)
-Everything below can be done from a browser at **`http://<robot-ip>:8080`**; nothing runs on the laptop.
+Everything below can be done from a browser at **`http://<robot-ip>:5555`**; nothing runs on the laptop.
 The web UI runs on the robot in the GPU Docker container (Ultralytics + TensorRT for the JetPack) and is
 `robot_io`'s only client:
 ```bash

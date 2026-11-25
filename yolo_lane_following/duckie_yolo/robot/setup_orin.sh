@@ -6,7 +6,7 @@
 #   cd ~/gym-duckietown/yolo_lane_following && bash duckie_yolo/robot/setup_orin.sh
 #
 # Result: robot_io (camera + wheels) runs natively as a systemd service; the web UI runs in the
-# GPU Docker container and is used from a browser at http://<robot-ip>:8080
+# GPU Docker container and is used from a browser at http://<robot-ip>:5555
 set -euo pipefail
 
 PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # .../yolo_lane_following
@@ -170,7 +170,7 @@ IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 cat <<EOF
 
 == done
-  Open http://${IP:-<robot-ip>}:8080 in a browser on your laptop: camera, driving + recording,
+  Open http://${IP:-<robot-ip>}:5555 in a browser on your laptop: camera, driving + recording,
   models, calibration and the dataset guidelines are all there.
 
   robot_io by hand (instead of the service):  $VENV/bin/python -m duckie_yolo.robot.robot_io --i2c-bus $I2C_BUS
