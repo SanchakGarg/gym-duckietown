@@ -225,6 +225,8 @@ The repo's own `Duckiebot-v0` gym env and `manual_control.py` can also connect t
 **Sim → real fine-tuning** (recommended):
 ```bash
 python -m duckie_yolo.robot.teleop_collect --host <robot>.local --robot-config configs/robot_mybot.yaml --out data/real/raw
+# keys (w/s/a/d, space, r = record, q) are read in the terminal and in the camera window;
+# the terminal works where the window gets no key events (e.g. WSLg). --no-window: terminal only
 python -m duckie_yolo.robot.autolabel_real --images data/real/raw --weights best.pt --out data/real/labeled
 # fix the masks in CVAT / Label Studio (YOLO segmentation format), then:
 python -m duckie_yolo.train --data data/sim_v1/dataset.yaml --extra-train data/real/labeled/images \
