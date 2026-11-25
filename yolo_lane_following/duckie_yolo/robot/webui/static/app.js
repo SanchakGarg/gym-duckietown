@@ -36,6 +36,7 @@ function showTab(name) {
   document.querySelectorAll(".tab").forEach((t) => (t.hidden = t.id !== "tab-" + name));
   if (name === "model") loadModels();
   if (name === "data") loadSessions();
+  if (name === "calib") setTimeout(refreshTrace, 0);
 }
 document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
 document.querySelectorAll("[data-goto]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); showTab(a.dataset.goto); }));
@@ -300,7 +301,102 @@ $("btn-s-apply").addEventListener("click", async () => {
 });
 const expected = () => { const o = num("s-omega"), d = num("s-dur"); return o && d ? Math.round((o * d * 180) / Math.PI) : null; };
 
+// ------------------------------------------------------------------ motors: start power, kick, gyro PID
+const TUNE_FMT = {
+  min_left: (v) => Math.round(v * 100) + "%", min_right: (v) => Math.round(v * 100) + "%",
+  kick: (v) => Math.round(v * 100) + "%", kick_ms: (v) => Math.round(v) + " ms",
+  kp: (v) => v.toFixed(3), ki: (v) => v.toFixed(2), kd: (v) => v.toFixed(3),
+};
+S.tuneTouched = {};
+async function setTuning(changes, msg) {
+  Object.keys(changes).forEach((k) => (S.tuneTouched[k] = Date.now()));
+  const r = await act(() => api("POST", "/api/motors/tuning", changes), msg);
+  poll();
+  return r;
+}
+document.querySelectorAll("input.tune").forEach((el) => {
+  const k = el.dataset.key, out = $(k + "-out");
+  el.addEventListener("input", () => { S.tuneTouched[k] = Date.now(); out.textContent = TUNE_FMT[k](Number(el.value)); });
+  el.addEventListener("change", () => setTuning({ [k]: Number(el.value) }));
+});
+$("pid-enabled").addEventListener("change", (e) => setTuning({ pid_enabled: e.target.checked }, e.target.checked ? "Gyro PID on" : "Gyro PID off"));
+$("swap-sides").addEventListener("change", (e) => setTuning({ swap_sides: e.target.checked }, "Saved"));
+$("btn-imu-cal").addEventListener("click", () => act(() => api("POST", "/api/motors/task", { task: "imu_calibrate" }), "Calibrating the gyro: keep still…"));
+$("btn-find-power").addEventListener("click", () => act(() => api("POST", "/api/motors/task", { task: "find_start_power" }), "Finding start power…"));
+$("btn-crawl").addEventListener("click", () => act(() => api("POST", "/api/motors/test", { kind: "crawl" }), "Crawling in 1 s…"));
+$("btn-pid-straight").addEventListener("click", () =>
+  act(() => api("POST", "/api/calib/wheels/run", { kind: "straight", v: 0.2, duration: 3 }), "Driving straight in 2 s…"));
+$("btn-pid-turn").addEventListener("click", () => act(() => api("POST", "/api/motors/test", { kind: "turn", omega: -2.0, duration: 1.5 }), "Turning right in 1 s…"));
+
+function renderMotors(m) {
+  const d = m.drive || {}, t = m.tuning;
+  $("motors-old").hidden = m.supported !== false;
+  $("imu-line").textContent = d.imu ? `IMU: ${d.imu} found · turn rate now ${(d.wz || 0).toFixed(2)} rad/s${d.imu_error ? " · read error: " + d.imu_error : ""}`
+    : m.supported === false ? "IMU: unknown (old robot_io)" : "IMU: none found. Start power and kick still work, the gyro PID needs the IMU.";
+  const task = d.task;
+  let res = t.imu_calibrated ? `Calibrated: gyro offset ${(t.gyro_bias * 57.3).toFixed(2)} °/s, direction ${t.imu_sign > 0 ? "normal" : "flipped"}.` : "Not calibrated yet.";
+  if (task && task.name === "imu_calibrate") {
+    if (task.state === "running") res = "Calibrating… keep the robot still, then it turns left briefly.";
+    else if (task.state === "failed") res = "Failed: " + task.error;
+    else if (task.result) res = `Done: offset ${task.result.noise_dps !== undefined ? (task.result.gyro_bias * 57.3).toFixed(2) : "?"} °/s, it turned about ${Math.round(task.result.turned_deg)}°. Did it turn LEFT? If not, tick the box below.`;
+  }
+  $("imu-result").textContent = res;
+  if (task && task.name === "find_start_power") {
+    $("imu-result").textContent += task.state === "running" ? " · Finding start power: the robot pivots on one wheel, then the other…" :
+      task.state === "failed" ? " · Start power: " + task.error : task.result ? ` · Start power found: left ${Math.round(task.result.min_left * 100)}%, right ${Math.round(task.result.min_right * 100)}%.` : "";
+  }
+  const busy = !!d.busy;
+  ["btn-imu-cal", "btn-find-power", "btn-crawl", "btn-pid-straight", "btn-pid-turn"].forEach((id) => ($(id).disabled = busy || !m.supported));
+  $("btn-find-power").disabled = $("btn-find-power").disabled || !d.imu || !t.imu_calibrated;
+  $("btn-imu-cal").disabled = $("btn-imu-cal").disabled || !d.imu;
+  // controls follow the saved tuning unless you are moving them
+  document.querySelectorAll("input.tune").forEach((el) => {
+    const k = el.dataset.key;
+    if (Date.now() - (S.tuneTouched[k] || 0) > 2500 && document.activeElement !== el) {
+      el.value = t[k]; $(k + "-out").textContent = TUNE_FMT[k](Number(t[k]));
+    }
+  });
+  if (Date.now() - (S.tuneTouched.pid_enabled || 0) > 2500) $("pid-enabled").checked = !!t.pid_enabled;
+  $("pid-enabled").disabled = !d.imu || !t.imu_calibrated;
+  if (Date.now() - (S.tuneTouched.swap_sides || 0) > 2500) $("swap-sides").checked = !!t.swap_sides;
+  const r = m.motion_result;
+  $("pid-result").textContent = !r ? (m.pid_active ? "Gyro PID is on." : "Gyro PID is off: the robot drives open loop.") :
+    r.w === 0 ? `Last straight run (${r.pid ? "PID on" : "PID off"}): the heading changed by ${r.turned_deg > 0 ? "+" : ""}${r.turned_deg}° (+ = left). Aim for under ±5°.`
+      : `Last turn (${r.pid ? "PID on" : "PID off"}): turned ${Math.abs(r.turned_deg)}° of the ${Math.abs(r.expected_deg)}° asked${r.turned_deg * r.expected_deg < 0 ? " — in the WRONG direction: tick the swap box" : ""}.`;
+}
+
+function drawTrace(samples) {
+  const c = $("trace"), dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  const g = c.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement);
+  const textCol = css.getPropertyValue("--text").trim(), mut = css.getPropertyValue("--muted").trim(), acc = css.getPropertyValue("--accent").trim();
+  let ymax = 1;
+  samples.forEach((s) => (ymax = Math.max(ymax, Math.abs(s[1]), Math.abs(s[2]))));
+  ymax = Math.ceil(ymax);
+  const X = (t) => w * (1 + t / 8), Y = (v) => h / 2 - (v / ymax) * (h / 2 - 8);
+  g.strokeStyle = mut; g.globalAlpha = 0.4; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(0, Y(0)); g.lineTo(w, Y(0)); g.stroke();
+  g.globalAlpha = 1; g.fillStyle = mut; g.font = "11px system-ui";
+  g.fillText(`+${ymax}`, 4, 12); g.fillText(`-${ymax}`, 4, h - 4);
+  const line = (idx, col, dash) => {
+    g.strokeStyle = col; g.lineWidth = 2; g.setLineDash(dash); g.beginPath();
+    samples.forEach((s, i) => (i ? g.lineTo(X(s[0]), Y(s[idx])) : g.moveTo(X(s[0]), Y(s[idx]))));
+    g.stroke(); g.setLineDash([]);
+  };
+  if (samples.length > 1) { line(1, acc, [6, 4]); line(2, textCol, []); }
+}
+async function refreshTrace() {
+  if (S.tab !== "calib" || document.hidden) return;
+  try { drawTrace((await api("GET", "/api/motors/trace?seconds=8")).samples); } catch (_) { /* offline */ }
+}
+setInterval(refreshTrace, 250);
+
 // ------------------------------------------------------------------ status polling
+const m0 = (s) => s.model.state === "running";
 function setPill(id, text, cls) { const p = $(id); p.textContent = text; p.className = "pill" + (cls ? " " + cls : ""); }
 async function poll() {
   let s;
@@ -309,7 +405,7 @@ async function poll() {
   }
   S.status = s;
   setPill("pill-robot", s.robot.connected ? "robot connected" : "robot_io offline", s.robot.connected ? "ok" : "bad");
-  setPill("pill-hz", `${s.loop.hz.toFixed(0)} Hz`);
+  setPill("pill-hz", m0(s) ? `camera ${s.loop.hz.toFixed(0)} Hz · model ${s.loop.model_hz.toFixed(0)} Hz` : `${s.loop.hz.toFixed(0)} Hz`);
   const m = s.model;
   setPill("pill-model", m.state === "running" ? `${m.name === "__color__" ? "colour" : m.name} · ${s.loop.infer_ms.toFixed(0)} ms` :
     m.state === "loading" ? `loading ${m.name}…` : m.state === "error" ? "model error" : "no model",
@@ -341,7 +437,7 @@ async function poll() {
   $("rec-calib-warn").hidden = s.calibration.calibrated.intrinsics;
 
   // model tab
-  $("model-state").textContent = m.state === "running" ? `Running ${m.name === "__color__" ? "colour thresholds" : m.name} on ${m.device} · inference ${s.loop.infer_ms.toFixed(0)} ms · loop ${s.loop.hz.toFixed(1)} Hz`
+  $("model-state").textContent = m.state === "running" ? `Running ${m.name === "__color__" ? "colour thresholds" : m.name} on ${m.device} · inference ${s.loop.infer_ms.toFixed(0)} ms · model ${s.loop.model_hz.toFixed(1)} Hz · camera/driving ${s.loop.hz.toFixed(0)} Hz`
     : m.state === "loading" ? `Loading ${m.name}… (first start of a model can take a minute)`
     : m.state === "error" ? `Error: ${m.error}` : "No model running.";
   $("autodrive").checked = s.autodrive.enabled;
@@ -357,6 +453,7 @@ async function poll() {
   $("intr-progress").value = cap ? cap.count : 0;
   $("intr-state").textContent = cap ? `${cap.count}/${cap.target} views${cap.active ? (cap.found ? " · board found" : " · looking for the board…") : " · capture stopped"}` : "";
   $("btn-intr-compute").disabled = !cap || cap.count < 8;
+  if (s.motors) renderMotors(s.motors);
   const exp = expected();
   $("wheels-state").textContent = `Current: gain ${c.wheels.gain}, trim ${c.wheels.trim}, omega gain ${c.omega_gain}` +
     (exp ? ` · a spin of ${num("s-omega")} rad/s for ${num("s-dur")} s should turn ${exp}°` : "");

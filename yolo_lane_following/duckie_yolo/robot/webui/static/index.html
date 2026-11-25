@@ -219,8 +219,71 @@
         <div class="result" id="extr-result"></div>
       </div>
 
+      <div class="card" id="motors-card">
+        <h2>3 · Motors: power and driving straight</h2>
+        <p class="small" id="imu-line">IMU: …</p>
+        <p class="warn small" id="motors-old" hidden>The robot_io running on the robot is older than this page and
+          has no motor control yet. On the robot: <code>git pull</code>, then
+          <code>sudo systemctl restart duckie-robot-io</code>.</p>
+
+        <h3>a) Gyro</h3>
+        <p class="small">Robot on the floor, about 30 cm free around it. It stays still for 1.5 s (gyro offset), then
+          turns <b>left</b> (counter-clockwise, seen from above) for half a second.</p>
+        <div class="row"><button class="primary" id="btn-imu-cal">Calibrate gyro</button></div>
+        <p class="small" id="imu-result"></p>
+        <label class="check"><input type="checkbox" id="swap-sides"><span>The robot turned <b>right</b> instead
+          (or left/right turns are mixed up in teleop): swap the left and right motor</span></label>
+
+        <h3>b) Start power</h3>
+        <p class="small">Motors stall when they get too little power. Each moving wheel gets at least this much.
+          <em>Find automatically</em> pivots on one wheel at a time, slowly adding power until the gyro sees the
+          robot move (robot on the floor).</p>
+        <div class="row">
+          <button id="btn-find-power">Find automatically</button>
+          <button id="btn-crawl" title="Drives at the slowest speed for 2 s">Test slow crawl</button>
+        </div>
+        <label>Left wheel minimum <output id="min_left-out">0%</output>
+          <input type="range" class="tune" data-key="min_left" min="0" max="0.6" step="0.01" value="0"></label>
+        <label>Right wheel minimum <output id="min_right-out">0%</output>
+          <input type="range" class="tune" data-key="min_right" min="0" max="0.6" step="0.01" value="0"></label>
+        <label>Start kick power <output id="kick-out">0%</output> (short burst when a wheel starts; 0 = off)
+          <input type="range" class="tune" data-key="kick" min="0" max="0.8" step="0.01" value="0"></label>
+        <label>Start kick length <output id="kick_ms-out">120 ms</output>
+          <input type="range" class="tune" data-key="kick_ms" min="0" max="300" step="10" value="120"></label>
+
+        <h3>c) Straight and accurate turns (PID)</h3>
+        <p class="small">The gyro measures how fast the robot really turns, and the PID corrects the wheels 100 times
+          a second until it matches what was asked: 0 when driving straight, the model's turn rate in curves.</p>
+        <label class="switch"><input type="checkbox" id="pid-enabled"><span></span> Use the gyro PID</label>
+        <label>Kp (react to the error now) <output id="kp-out">0.080</output>
+          <input type="range" class="tune" data-key="kp" min="0" max="0.3" step="0.005" value="0.08"></label>
+        <label>Ki (remove a steady pull to one side) <output id="ki-out">1.00</output>
+          <input type="range" class="tune" data-key="ki" min="0" max="3" step="0.05" value="1.0"></label>
+        <label>Kd (damp wobbling) <output id="kd-out">0.000</output>
+          <input type="range" class="tune" data-key="kd" min="0" max="0.05" step="0.001" value="0"></label>
+        <div class="row">
+          <button class="primary" id="btn-pid-straight">Drive straight 3 s</button>
+          <button id="btn-pid-turn">Turn right test</button>
+        </div>
+        <p class="small" id="pid-result"></p>
+        <canvas id="trace" height="160" aria-label="Turn rate: target and measured"></canvas>
+        <p class="small muted legend"><span class="lg lg-ref"></span>asked turn rate · <span class="lg lg-meas"></span>measured
+          by the gyro (rad/s, last 8 s, + = left)</p>
+        <details class="small">
+          <summary>Tuning tips</summary>
+          <ul>
+            <li>Still drifts to one side slowly → raise <b>Ki</b>.</li>
+            <li>Weaves left-right quickly → lower <b>Kp</b> (or add a little <b>Kd</b>).</li>
+            <li>Corrects too slowly / overshoots turns → raise <b>Kp</b> a little.</li>
+            <li>Change one value at a time and run <em>Drive straight</em> again: aim for under ±5°.</li>
+          </ul>
+        </details>
+      </div>
+
       <div class="card">
-        <h2>3 · Wheels</h2>
+        <h2>4 · Wheels (speed)</h2>
+        <p class="small muted">With the gyro PID on, only the <em>distance</em> part matters here (it makes the speed
+          right); the PID already keeps it straight.</p>
         <p class="small"><b>Straight:</b> put the robot on a straight tape line with about 1 m free ahead. It starts
           2 s after you press the button.</p>
         <div class="row">

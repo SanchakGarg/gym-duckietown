@@ -213,7 +213,7 @@ docker logs -f duckie-webui                   # its log
 | **Drive** | live camera (raw / corrected / model view), hold-to-drive with W A S D or on-screen buttons, **record a dataset while driving** (R) |
 | **Model** | pick a model in `models/` (or colour thresholds), run it on the Jetson, "let the model drive" with a speed cap, upload models, build a TensorRT engine |
 | **Datasets** | recorded sessions (`data/real/<time>_<name>/raw` + `rect`): download as zip, re-correct after calibrating, delete |
-| **Calibrate** | lens (auto-captures checkerboard views), floor (x0 / y0, grid check image), wheels (straight + spin tests), printable checkerboard |
+| **Calibrate** | lens (auto-captures checkerboard views), floor (x0 / y0, grid check image), **motors** (gyro calibration, start power, start kick, yaw-rate PID with a live chart), wheels (straight + spin tests), printable checkerboard |
 | **Guidelines** | what to record, red stop lines, label classes and rules, the fine-tuning loop |
 
 Safety: the robot only moves while the page sends commands. Teleop stops 0.3 s after the last key
@@ -222,6 +222,27 @@ and `robot_io`'s watchdog and duty cap stay in force. The container has no memor
 Jetson GPU shares the board's RAM); `setup_orin.sh` can add swap, max clocks and a headless boot to
 leave the model as much memory as possible. Without Docker, `python -m duckie_yolo.robot.webui` runs
 the same page with colour thresholds only.
+
+The web UI runs three threads: the camera/command loop at the camera rate (30 Hz), model inference
+on the newest frame as fast as the model allows (a result older than 0.5 s never drives), and the
+stream renderer (up to 30 fps). Video and teleop stay at 30 fps even when the model is slower; use a
+TensorRT `.engine` for the fastest model rate.
+
+### Motors: start power, start kick and gyro PID
+Every wheel command passes through a 100 Hz drive controller in `robot_io` (`robot/drive.py`):
+* **start power** (`min_left` / `min_right`): a moving wheel always gets at least this duty, so slow
+  commands don't stall the motors; **start kick**: a short burst when a wheel starts from standstill.
+* **yaw-rate PID**: with the HAT's IMU (MPU-6050/6500/9250 or ICM-20948 at 0x68, auto-detected,
+  `hw/imu.py`) the measured turn rate is driven to the commanded one, so "straight" is straight and
+  curves turn as much as the controller asks, whatever the motor mismatch or battery level. With
+  the PID on, the open-loop `omega_gain` is not used.
+
+Calibrate tab → *Motors*: *Calibrate gyro* (still, then a short left turn: offset + mounting
+direction; tick *swap* if the robot turned right), *Find automatically* (start power per wheel),
+then *Drive straight 3 s* / *Turn right test* and adjust Kp/Ki/Kd while watching the chart. The
+values are saved in `configs/robot_mybot.yaml` (`motors:`) and sent to `robot_io` on connect;
+`run_robot` and `teleop_collect` send them too. After updating the code, restart `robot_io`
+(`sudo systemctl restart duckie-robot-io`).
 
 ### Command-line tools (alternative)
 Watch the camera from a laptop (the wheels never move; `robot_io` serves one client at a time):

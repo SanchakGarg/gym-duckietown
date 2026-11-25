@@ -83,6 +83,9 @@ class Recorder:
             json.dump(self._meta, f, indent=2)
         own(p)
 
+    def due(self, now: float) -> bool:
+        return self.active and now - self._t_last >= 1.0 / self.hz
+
     def maybe_save(self, now: float, raw_bgr: np.ndarray, rect_bgr: Optional[np.ndarray]) -> bool:
         """Queue a frame if recording and the rate allows it. Called from the control loop."""
         if not self.active or now - self._t_last < 1.0 / self.hz:

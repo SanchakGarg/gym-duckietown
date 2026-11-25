@@ -44,7 +44,7 @@ def main(argv=None):
     ap.add_argument("--models-dir", default="models")
     ap.add_argument("--data-dir", default="data/real")
     ap.add_argument("--calib-dir", default="calib")
-    ap.add_argument("--stream-fps", type=float, default=15.0)
+    ap.add_argument("--stream-fps", type=float, default=30.0)
     a = ap.parse_args(argv)
 
     models = ModelManager(a.models_dir, a.agent_config)

@@ -73,6 +73,10 @@ class WebUI:
             ("POST", R(r"^/api/calib/extrinsics$"), self.extrinsics),
             ("POST", R(r"^/api/calib/wheels/run$"), self.wheels_run),
             ("POST", R(r"^/api/calib/wheels/apply$"), self.wheels_apply),
+            ("POST", R(r"^/api/motors/tuning$"), self.motors_tuning),
+            ("POST", R(r"^/api/motors/task$"), self.motors_task),
+            ("POST", R(r"^/api/motors/test$"), self.motors_test),
+            ("GET", R(r"^/api/motors/trace$"), self.motors_trace),
         ]
 
     # ------------------------------------------------------------------ pages and files
@@ -149,7 +153,7 @@ class WebUI:
         name = str(body.get("name", ""))
         conf = body.get("conf")
         self.ctl.set_autodrive(False)
-        self.models.start(name, self.ctl.camera, self.ctl.robot.actuation, None if conf is None else float(conf))
+        self.models.start(name, self.ctl.camera, self.ctl.robot.effective_actuation(), None if conf is None else float(conf))
         return {"ok": True}
 
     def model_stop(self, req, body):
@@ -240,6 +244,48 @@ class WebUI:
 
         return self.calib.wheels_apply(str(body.get("kind")), float(body.get("v", 0.25)), float(body.get("omega", 2.0)),
                                        float(body.get("duration", 3.0)), opt("drift"), opt("distance"), opt("turned_deg"))
+
+
+    # ------------------------------------------------------------------ motors (start power, kick, PID)
+    _TUNING_LIMITS = {"min_left": (0.0, 0.8), "min_right": (0.0, 0.8), "kick": (0.0, 0.9), "kick_ms": (0.0, 500.0),
+                      "kp": (0.0, 1.0), "ki": (0.0, 5.0), "kd": (0.0, 0.2), "i_max": (0.0, 0.6), "u_max": (0.05, 0.8)}
+
+    def motors_tuning(self, req, body):
+        changes = {}
+        for k, v in body.items():
+            if k in self._TUNING_LIMITS:
+                lo, hi = self._TUNING_LIMITS[k]
+                changes[k] = float(min(max(float(v), lo), hi))
+            elif k in ("pid_enabled", "swap_sides"):
+                changes[k] = bool(v)
+        if not changes:
+            raise HTTPError(400, "nothing to change")
+        t = self.ctl.set_motor_tuning(changes)
+        return {"ok": True, "tuning": t.to_dict()}
+
+    def motors_task(self, req, body):
+        if self.ctl.autodrive:
+            raise HTTPError(409, "switch autodrive off first")
+        reply = self.ctl.robot_rpc({"command": "drive_task", "task": str(body.get("task", ""))})
+        if reply is None:
+            raise HTTPError(400, "robot_io does not support motor tests yet: restart it after git pull")
+        if not reply.get("ok"):
+            raise HTTPError(400, reply.get("error", "robot_io refused the test"))
+        return {"ok": True, "task": reply.get("task")}
+
+    def motors_test(self, req, body):
+        """Short open-loop crawl at the slowest speed: does the robot keep moving at minimum power?"""
+        kind = str(body.get("kind", "crawl"))
+        if kind == "crawl":
+            self.ctl.start_motion(0.03, 0.0, float(body.get("duration", 2.0)), delay=1.0)
+        elif kind == "turn":
+            self.ctl.start_motion(0.0, float(body.get("omega", -2.0)), float(body.get("duration", 1.5)), delay=1.0)
+        else:
+            raise HTTPError(400, "kind must be crawl or turn")
+        return {"ok": True}
+
+    def motors_trace(self, req, body):
+        return {"samples": self.ctl.trace_samples(float(req.query.get("seconds", 8)))}
 
 
 def make_handler(app: WebUI):

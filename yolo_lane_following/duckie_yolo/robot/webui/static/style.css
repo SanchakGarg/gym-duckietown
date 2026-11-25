@@ -189,3 +189,14 @@ table.classes th, table.classes td { text-align: left; padding: .3rem .4rem; bor
 
 .toast { position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: .55rem 1rem; border-radius: 8px; font-size: .9rem; max-width: calc(100% - 32px); z-index: 20; box-shadow: 0 4px 16px rgba(0,0,0,.25); }
 .toast.error { background: var(--bad); color: #fff; }
+
+/* ---------------- motors ---------------- */
+#motors-card h3 { margin-top: 1rem; }
+#motors-card label { margin: .35rem 0; }
+label.check { display: flex; gap: .5rem; align-items: flex-start; color: var(--text); font-size: .85rem; margin: .5rem 0; cursor: pointer; }
+label.check input { margin-top: .2rem; }
+#trace { width: 100%; height: 160px; display: block; background: var(--surface-2); border-radius: 8px; margin-top: .5rem; }
+.legend { margin-top: .3rem; }
+.lg { display: inline-block; width: 1.2rem; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: .3rem; }
+.lg-ref { border-color: var(--accent); border-top-style: dashed; }
+.lg-meas { border-color: var(--text); }
