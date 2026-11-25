@@ -24,8 +24,28 @@ from __future__ import annotations
 import argparse
 import math
 import time
+from typing import Optional
 
+from ..control.kinematics import WheelCalibration
 from .robot_config import RobotConfig
+
+
+def apply_straight(cal: WheelCalibration, v: float, duration: float, drift_cm: Optional[float] = None,
+                   distance_m: Optional[float] = None, trim_gain: float = 0.005) -> WheelCalibration:
+    """Update trim (from the lateral drift, cm, + = ended left) and gain (from the distance travelled)
+    after a straight run of ``v`` m/s for ``duration`` s. Modifies and returns ``cal``."""
+    if drift_cm is not None:
+        dist = distance_m or v * duration
+        cal.trim -= trim_gain * drift_cm / max(dist, 0.1)
+    if distance_m is not None and distance_m > 0:
+        cal.gain *= (v * duration) / distance_m
+    return cal
+
+
+def omega_gain_from(turned_deg: float, omega: float, duration: float) -> float:
+    """actuation.omega_gain from a spin of ``omega`` rad/s for ``duration`` s that turned ``turned_deg``."""
+    ratio = math.radians(turned_deg) / (omega * duration)
+    return 1.0 / max(ratio, 1e-3)
 
 
 def main(argv=None):
@@ -63,9 +83,8 @@ def main(argv=None):
             expected = math.degrees(a.omega * a.duration)
             print(f"[wheels] expected {expected:.0f} deg; re-run with --turned-deg <measured> --save")
             return
-        ratio = math.radians(a.turned_deg) / (a.omega * a.duration)
-        robot.actuation.omega_gain = 1.0 / max(ratio, 1e-3)
-        print(f"[wheels] realized/commanded yaw = {ratio:.3f} -> actuation.omega_gain = {robot.actuation.omega_gain:.3f}")
+        robot.actuation.omega_gain = omega_gain_from(a.turned_deg, a.omega, a.duration)
+        print(f"[wheels] realized/commanded yaw = {1.0 / robot.actuation.omega_gain:.3f} -> actuation.omega_gain = {robot.actuation.omega_gain:.3f}")
         if a.save:
             robot.save(a.robot_config)
             print(f"[wheels] wrote {a.robot_config}")
@@ -86,11 +105,7 @@ def main(argv=None):
         print("[wheels] done. Measure drift (cm, + = left) and distance (m), then re-run with --drift/--distance --save")
         return
 
-    if a.drift is not None:
-        dist = a.distance or a.v * a.duration
-        cal.trim -= a.trim_gain * a.drift / max(dist, 0.1)
-    if a.distance is not None and a.distance > 0:
-        cal.gain *= (a.v * a.duration) / a.distance
+    apply_straight(cal, a.v, a.duration, a.drift, a.distance, a.trim_gain)
     print(f"[wheels] new gain={cal.gain:.3f} trim={cal.trim:+.4f}")
     if a.save:
         robot.wheels = cal

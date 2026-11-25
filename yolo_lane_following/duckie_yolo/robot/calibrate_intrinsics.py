@@ -17,6 +17,7 @@ import argparse
 import glob
 import os
 import time
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -34,13 +35,32 @@ def find_board(gray, pattern):
     return cv2.cornerSubPix(gray, corners, (5, 5), (-1, -1), crit)
 
 
+class ViewSelector:
+    """Decides when a detected checkerboard view is new enough to keep (moved >= min_move px, or
+    the board has been held still for longer than hold_s seconds)."""
+
+    def __init__(self, min_move: float = 40.0, hold_s: float = 3.0):
+        self.min_move, self.hold_s = min_move, hold_s
+        self.last_center = None
+        self.t_last = 0.0
+
+    def accept(self, corners: np.ndarray, now: Optional[float] = None) -> bool:
+        now = time.time() if now is None else now
+        c = corners.reshape(-1, 2).mean(0)
+        if self.last_center is not None and np.linalg.norm(c - self.last_center) < self.min_move and now - self.t_last < self.hold_s:
+            return False
+        self.last_center, self.t_last = c, now
+        return True
+
+
 def capture(args):
     from .real_env import RealRobotEnv
 
     os.makedirs(args.capture, exist_ok=True)
     env = RealRobotEnv(args.host, args.port, encoding="jpeg", jpeg_quality=95)
     env.reset()
-    saved, last_center, t_last = 0, None, 0.0
+    saved = 0
+    selector = ViewSelector()
     pattern = (args.cols, args.rows)
     print(f"[intrinsics] capturing {args.count} views to {args.capture} (move the board around)")
     try:
@@ -48,28 +68,44 @@ def capture(args):
             rgb = env.wheels(0.0, 0.0)
             bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
             corners = find_board(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY), pattern)
-            if corners is None:
-                continue
-            c = corners.reshape(-1, 2).mean(0)
-            spread = np.ptp(corners.reshape(-1, 2), axis=0).mean()
-            if last_center is not None and np.linalg.norm(c - last_center) < 40 and time.time() - t_last < 3:
+            if corners is None or not selector.accept(corners):
                 continue
             cv2.imwrite(os.path.join(args.capture, f"intr_{saved:03d}.png"), bgr)
             saved += 1
-            last_center, t_last = c, time.time()
+            c = corners.reshape(-1, 2).mean(0)
+            spread = np.ptp(corners.reshape(-1, 2), axis=0).mean()
             print(f"  saved {saved}/{args.count} (board center {c.astype(int)}, size {spread:.0f}px)")
     finally:
         env.close()
 
 
-def calibrate(args):
-    pattern = (args.cols, args.rows)
-    objp = np.zeros((1, args.cols * args.rows, 3), np.float64)
-    objp[0, :, :2] = np.mgrid[0 : args.cols, 0 : args.rows].T.reshape(-1, 2) * args.square
+def image_files(folder: str) -> List[str]:
+    return sorted(sum((glob.glob(os.path.join(folder, e)) for e in ("*.png", "*.jpg")), []))
+
+
+def calibrate_images(
+    files: Sequence[str],
+    robot_config: str,
+    cols: int = 7,
+    rows: int = 5,
+    square: float = 0.031,
+    model: str = "fisheye",
+    fov: float = 75.0,
+    out_size: Tuple[int, int] = (640, 480),
+) -> Dict[str, Any]:
+    """Calibrate from checkerboard images and write the rectifier into ``robot_config``.
+
+    Returns {"rms", "views", "files", "K", "D", "sample"} where sample is the path of a raw|rectified
+    side-by-side image. Raises ValueError when fewer than 8 views contain the board.
+    """
+    pattern = (cols, rows)
+    objp = np.zeros((1, cols * rows, 3), np.float64)
+    objp[0, :, :2] = np.mgrid[0:cols, 0:rows].T.reshape(-1, 2) * square
     obj_pts, img_pts, size = [], [], None
-    files = sorted(sum((glob.glob(os.path.join(args.images, e)) for e in ("*.png", "*.jpg")), []))
     for f in files:
         img = cv2.imread(f)
+        if img is None:
+            continue
         if size is None:
             size = (img.shape[1], img.shape[0])
         elif (img.shape[1], img.shape[0]) != size:
@@ -78,11 +114,10 @@ def calibrate(args):
         if corners is not None:
             obj_pts.append(objp.copy())
             img_pts.append(corners.reshape(1, -1, 2).astype(np.float64))
-    print(f"[intrinsics] board found in {len(img_pts)}/{len(files)} images")
     if len(img_pts) < 8:
-        raise SystemExit("need at least 8 good views")
+        raise ValueError(f"need at least 8 views with the board, found {len(img_pts)}/{len(files)}")
 
-    if args.model == "fisheye":
+    if model == "fisheye":
         K = np.zeros((3, 3))
         D = np.zeros((4, 1))
         flags = cv2.fisheye.CALIB_RECOMPUTE_EXTRINSIC | cv2.fisheye.CALIB_FIX_SKEW
@@ -94,23 +129,33 @@ def calibrate(args):
             [i.reshape(-1, 2).astype(np.float32) for i in img_pts],
             size, None, None,
         )
-    print(f"[intrinsics] model={args.model} RMS reprojection error = {rms:.3f} px")
-    print("K =\n", K, "\nD =", D.ravel())
 
-    out_size = (args.out_width, args.out_height)
-    rect = Rectifier(K, D, size, out_size, Rectifier.virtual_pinhole(out_size, args.fov), model=args.model)
-    robot = RobotConfig.load(args.robot_config)
-    cam = robot.camera_model()
-    cam_d = cam.to_dict()
+    out_size = tuple(out_size)
+    rect = Rectifier(K, D, size, out_size, Rectifier.virtual_pinhole(out_size, fov), model=model)
+    robot = RobotConfig.load(robot_config)
+    cam_d = robot.camera_model().to_dict()
     cam_d.update(width=out_size[0], height=out_size[1], rectifier=rect.to_dict())
     robot.camera = cam_d
     robot.calibrated["intrinsics"] = True
     robot.calibrated["extrinsics"] = False  # the homography lives in the rectified image: redo it
-    robot.save(args.robot_config)
+    robot.save(robot_config)
+    sample_path = os.path.splitext(robot_config)[0] + "_rectified_sample.jpg"
+    sample = cv2.imread(files[0])
+    cv2.imwrite(sample_path, np.hstack([cv2.resize(sample, out_size), rect(sample)]))
+    return {"rms": float(rms), "views": len(img_pts), "files": len(files), "K": K, "D": D, "sample": sample_path}
+
+
+def calibrate(args):
+    files = image_files(args.images)
+    try:
+        r = calibrate_images(files, args.robot_config, args.cols, args.rows, args.square, args.model, args.fov,
+                             (args.out_width, args.out_height))
+    except ValueError as e:
+        raise SystemExit(str(e))
+    print(f"[intrinsics] board found in {r['views']}/{r['files']} images")
+    print(f"[intrinsics] model={args.model} RMS reprojection error = {r['rms']:.3f} px")
+    print("K =\n", r["K"], "\nD =", r["D"].ravel())
     print(f"[intrinsics] wrote {args.robot_config} - now run calibrate_extrinsics")
-    if files:
-        sample = cv2.imread(files[0])
-        cv2.imwrite(os.path.splitext(args.robot_config)[0] + "_rectified_sample.jpg", np.hstack([cv2.resize(sample, out_size), rect(sample)]))
 
 
 def main(argv=None):

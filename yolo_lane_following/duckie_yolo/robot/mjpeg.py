@@ -14,12 +14,41 @@ PAGE = b"""<!doctype html><html><head><title>duckie_yolo</title>
 </head><body><img src="/stream"></body></html>"""
 
 
-class MJPEGServer:
-    def __init__(self, port: int = 8080, host: str = "0.0.0.0", quality: int = 70, max_fps: float = 15.0):
+class FrameBuffer:
+    """Latest JPEG frame shared between one producer and many HTTP stream readers."""
+
+    def __init__(self, quality: int = 70):
         self.quality = quality
-        self.min_dt = 1.0 / max_fps
         self._jpeg: Optional[bytes] = None
         self._cond = threading.Condition()
+
+    def publish(self, bgr: np.ndarray) -> None:
+        import cv2
+
+        ok, buf = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, self.quality])
+        if ok:
+            self.publish_jpeg(buf.tobytes())
+
+    def publish_jpeg(self, jpg: bytes) -> None:
+        with self._cond:
+            self._jpeg = jpg
+            self._cond.notify_all()
+
+    def latest(self) -> Optional[bytes]:
+        with self._cond:
+            return self._jpeg
+
+    def wait_new(self, last: Optional[bytes], timeout: float) -> Optional[bytes]:
+        with self._cond:
+            if self._jpeg is last:
+                self._cond.wait(timeout)
+            return None if self._jpeg is last else self._jpeg
+
+
+class MJPEGServer(FrameBuffer):
+    def __init__(self, port: int = 8080, host: str = "0.0.0.0", quality: int = 70, max_fps: float = 15.0):
+        super().__init__(quality)
+        self.min_dt = 1.0 / max_fps
         server = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -63,25 +92,6 @@ class MJPEGServer:
         self.httpd.daemon_threads = True
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.thread.start()
-
-    def publish(self, bgr: np.ndarray) -> None:
-        import cv2
-
-        ok, buf = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, self.quality])
-        if ok:
-            with self._cond:
-                self._jpeg = buf.tobytes()
-                self._cond.notify_all()
-
-    def latest(self) -> Optional[bytes]:
-        with self._cond:
-            return self._jpeg
-
-    def wait_new(self, last: Optional[bytes], timeout: float) -> Optional[bytes]:
-        with self._cond:
-            if self._jpeg is last:
-                self._cond.wait(timeout)
-            return None if self._jpeg is last else self._jpeg
 
     def close(self) -> None:
         self.httpd.shutdown()

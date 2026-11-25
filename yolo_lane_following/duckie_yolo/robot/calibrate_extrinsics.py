@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from typing import Tuple
 
 import cv2
 import numpy as np
@@ -47,6 +48,49 @@ def ground_grid(rows: int, cols: int, square: float, x0: float, y0: float) -> np
     return np.stack([x0 + i * square, y0 + j * square], axis=-1).astype(np.float64)
 
 
+def compute_extrinsics(
+    raw_bgr: np.ndarray,
+    robot: RobotConfig,
+    cols: int = 7,
+    rows: int = 5,
+    square: float = 0.031,
+    x0: float = 0.191,
+    y0: float = -0.093,
+) -> Tuple[np.ndarray, float, float]:
+    """Fit the image-to-ground homography from one raw camera frame of the floor checkerboard.
+
+    Updates ``robot.camera`` / ``robot.calibrated`` in place (the caller saves it). Returns
+    (check image with a 10 cm floor grid, mean error m, max error m). Raises ValueError when the
+    board is not found in the rectified image.
+    """
+    cam = robot.camera_model()
+    rect = cam.rectify(raw_bgr)
+    corners = find_board(cv2.cvtColor(rect, cv2.COLOR_BGR2GRAY), (cols, rows))
+    if corners is None:
+        raise ValueError("checkerboard not found in the rectified image")
+    img_g = order_grid(corners, rows, cols)
+    gnd_g = ground_grid(rows, cols, square, x0, y0)
+    H, _ = cv2.findHomography(img_g.reshape(-1, 2), gnd_g.reshape(-1, 2), 0)
+
+    new_cam = CameraModel(rect.shape[1], rect.shape[0], H, cam.rectifier)
+    proj, _ = new_cam.image_to_ground(img_g.reshape(-1, 2))
+    err = np.linalg.norm(proj - gnd_g.reshape(-1, 2), axis=1)
+
+    # visual check: draw a 10 cm ground grid and the robot's straight-ahead line
+    vis = rect.copy()
+    for x in np.arange(0.1, 0.81, 0.1):
+        uv, ok = new_cam.ground_to_image(np.array([[x, y] for y in np.linspace(-0.3, 0.3, 30)]))
+        cv2.polylines(vis, [uv[ok].astype(np.int32)], False, (0, 255, 0), 1)
+    for y in np.arange(-0.3, 0.31, 0.1):
+        uv, ok = new_cam.ground_to_image(np.array([[x, y] for x in np.linspace(0.1, 0.8, 30)]))
+        cv2.polylines(vis, [uv[ok].astype(np.int32)], False, (0, 0, 255) if abs(y) < 1e-6 else (0, 255, 0), 1)
+    cv2.drawChessboardCorners(vis, (cols, rows), corners, True)
+
+    robot.camera = new_cam.to_dict()
+    robot.calibrated["extrinsics"] = True
+    return vis, float(err.mean()), float(err.max())
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="localhost")
@@ -61,7 +105,6 @@ def main(argv=None):
     a = ap.parse_args(argv)
 
     robot = RobotConfig.load(a.robot_config)
-    cam = robot.camera_model()
     if not robot.calibrated.get("intrinsics"):
         print("[extrinsics] WARNING: intrinsics not calibrated, using default rectification")
     if a.image:
@@ -73,34 +116,14 @@ def main(argv=None):
         env.reset()
         raw = cv2.cvtColor(env.wheels(0.0, 0.0), cv2.COLOR_RGB2BGR)
         env.close()
-    rect = cam.rectify(raw)
-    corners = find_board(cv2.cvtColor(rect, cv2.COLOR_BGR2GRAY), (a.cols, a.rows))
-    if corners is None:
-        cv2.imwrite("extrinsics_failed.jpg", rect)
-        raise SystemExit("checkerboard not found in the rectified image (saved extrinsics_failed.jpg)")
-    img_g = order_grid(corners, a.rows, a.cols)
-    gnd_g = ground_grid(a.rows, a.cols, a.square, a.x0, a.y0)
-    H, _ = cv2.findHomography(img_g.reshape(-1, 2), gnd_g.reshape(-1, 2), 0)
-
-    new_cam = CameraModel(rect.shape[1], rect.shape[0], H, cam.rectifier)
-    proj, _ = new_cam.image_to_ground(img_g.reshape(-1, 2))
-    err = np.linalg.norm(proj - gnd_g.reshape(-1, 2), axis=1)
-    print(f"[extrinsics] reprojection error on the floor: mean {1000 * err.mean():.1f} mm, max {1000 * err.max():.1f} mm")
-
-    # visual check: draw a 10 cm ground grid and the robot's straight-ahead line
-    vis = rect.copy()
-    for x in np.arange(0.1, 0.81, 0.1):
-        uv, ok = new_cam.ground_to_image(np.array([[x, y] for y in np.linspace(-0.3, 0.3, 30)]))
-        cv2.polylines(vis, [uv[ok].astype(np.int32)], False, (0, 255, 0), 1)
-    for y in np.arange(-0.3, 0.31, 0.1):
-        uv, ok = new_cam.ground_to_image(np.array([[x, y] for x in np.linspace(0.1, 0.8, 30)]))
-        cv2.polylines(vis, [uv[ok].astype(np.int32)], False, (0, 0, 255) if abs(y) < 1e-6 else (0, 255, 0), 1)
-    cv2.drawChessboardCorners(vis, (a.cols, a.rows), corners, True)
+    try:
+        vis, mean_err, max_err = compute_extrinsics(raw, robot, a.cols, a.rows, a.square, a.x0, a.y0)
+    except ValueError as e:
+        cv2.imwrite("extrinsics_failed.jpg", robot.camera_model().rectify(raw))
+        raise SystemExit(f"{e} (saved extrinsics_failed.jpg)")
+    print(f"[extrinsics] reprojection error on the floor: mean {1000 * mean_err:.1f} mm, max {1000 * max_err:.1f} mm")
     out_img = os.path.splitext(a.robot_config)[0] + "_extrinsics_check.jpg"
     cv2.imwrite(out_img, vis)
-
-    robot.camera = new_cam.to_dict()
-    robot.calibrated["extrinsics"] = True
     robot.save(a.robot_config)
     print(f"[extrinsics] wrote {a.robot_config}; check the grid overlay in {out_img}")
 
