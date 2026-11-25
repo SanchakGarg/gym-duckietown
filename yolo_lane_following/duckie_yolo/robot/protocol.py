@@ -1,7 +1,8 @@
 """Wire protocol between robot_io (on the robot) and its clients.
 
 Compatible with gym-duckietown's ``Duckiebot-v0`` env (src/gym_duckietown/envs/duckiebot_env.py):
-ZMQ PAIR socket on port 7777; the client sends JSON commands, the server answers each
+ZMQ PAIR socket (port 5555 here; Duckiebot-v0 itself expects 7777, so run robot_io with
+``--port 7777`` for that env); the client sends JSON commands, the server answers each
 ``reset`` / ``action`` with a JSON header followed by the image buffer.
 
 Requests:   {"command": "reset" | "action" | "stop" | "ping",
@@ -18,7 +19,7 @@ from typing import Tuple
 
 import numpy as np
 
-DEFAULT_PORT = 7777
+DEFAULT_PORT = 5555
 
 
 def encode_frame(frame_bgr: np.ndarray, encoding: str = "raw", quality: int = 80) -> Tuple[dict, bytes]:

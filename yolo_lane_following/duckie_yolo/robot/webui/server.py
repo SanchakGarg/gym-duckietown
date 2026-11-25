@@ -376,7 +376,7 @@ def make_handler(app: WebUI):
     return Handler
 
 
-def serve(app: WebUI, host: str = "0.0.0.0", port: int = 5555) -> ThreadingHTTPServer:
+def serve(app: WebUI, host: str = "0.0.0.0", port: int = 8080) -> ThreadingHTTPServer:
     httpd = ThreadingHTTPServer((host, port), make_handler(app))
     httpd.daemon_threads = True
     return httpd

@@ -161,7 +161,7 @@ def calibrate(args):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="localhost")
-    ap.add_argument("--port", type=int, default=7777)
+    ap.add_argument("--port", type=int, default=5555)
     ap.add_argument("--capture", default="", help="capture views from the robot into this folder")
     ap.add_argument("--count", type=int, default=30)
     ap.add_argument("--images", default="", help="folder with checkerboard images to calibrate from")

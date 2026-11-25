@@ -2,7 +2,7 @@
 
 Runs ON THE ROBOT next to robot_io; everything is used from a browser:
 
-    python3 -m duckie_yolo.robot.webui                     # then open http://<robot-ip>:5555
+    python3 -m duckie_yolo.robot.webui                     # then open http://<robot-ip>:8080
     bash duckie_yolo/robot/webui/start_webui.sh            # same, inside the GPU Docker container (default)
 
 Run it from yolo_lane_following/ (models/, data/real/, calib/ and configs/ are relative to it).
@@ -34,10 +34,10 @@ def _ips() -> str:
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--port", type=int, default=5555)
+    ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--bind", default="0.0.0.0")
     ap.add_argument("--robot-host", default="localhost", help="where robot_io runs")
-    ap.add_argument("--robot-port", type=int, default=7777)
+    ap.add_argument("--robot-port", type=int, default=5555)
     ap.add_argument("--encoding", default="raw", choices=["raw", "jpeg"], help="jpeg if robot_io is on another machine")
     ap.add_argument("--robot-config", default="configs/robot_mybot.yaml", help="calibration file (created on first calibration)")
     ap.add_argument("--agent-config", default="configs/agent_real.yaml")

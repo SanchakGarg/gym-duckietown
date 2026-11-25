@@ -70,7 +70,7 @@ class TerminalKeys:
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="localhost")
-    ap.add_argument("--port", type=int, default=7777)
+    ap.add_argument("--port", type=int, default=5555)
     ap.add_argument("--robot-config", default="")
     ap.add_argument("--out", default="data/real/raw")
     ap.add_argument("--hz", type=float, default=3.0, help="recording rate")

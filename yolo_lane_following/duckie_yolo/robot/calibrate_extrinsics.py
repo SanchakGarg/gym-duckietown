@@ -94,7 +94,7 @@ def compute_extrinsics(
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="localhost")
-    ap.add_argument("--port", type=int, default=7777)
+    ap.add_argument("--port", type=int, default=5555)
     ap.add_argument("--image", default="", help="use this raw camera image instead of grabbing one")
     ap.add_argument("--robot-config", default="configs/robot_duckiebot.yaml")
     ap.add_argument("--cols", type=int, default=7)

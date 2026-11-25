@@ -10,7 +10,7 @@ Safety:
   * SIGINT/SIGTERM release the wheels and the GPIO pins
 
 Examples (on the robot):
-    python3 -m duckie_yolo.robot.robot_io                        # serve camera + wheels on :7777
+    python3 -m duckie_yolo.robot.robot_io                        # serve camera + wheels on :5555
     python3 -m duckie_yolo.robot.robot_io --hw-test              # spin each wheel, save a frame, exit
     python3 -m duckie_yolo.robot.robot_io --camera mock --mock-wheels   # no hardware (testing)
 """

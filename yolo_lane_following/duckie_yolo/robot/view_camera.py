@@ -21,7 +21,7 @@ from .real_env import RealRobotEnv
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="localhost")
-    ap.add_argument("--port", type=int, default=7777)
+    ap.add_argument("--port", type=int, default=5555)
     ap.add_argument("--robot-config", default="", help="if given, also show the rectified (sim-like) view")
     ap.add_argument("--quality", type=int, default=80, help="JPEG quality over Wi-Fi")
     a = ap.parse_args(argv)

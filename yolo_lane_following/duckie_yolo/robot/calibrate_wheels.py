@@ -51,7 +51,7 @@ def omega_gain_from(turned_deg: float, omega: float, duration: float) -> float:
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="localhost")
-    ap.add_argument("--port", type=int, default=7777)
+    ap.add_argument("--port", type=int, default=5555)
     ap.add_argument("--robot-config", default="configs/robot_duckiebot.yaml")
     ap.add_argument("--v", type=float, default=0.25)
     ap.add_argument("--duration", type=float, default=3.0)

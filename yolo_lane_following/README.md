@@ -15,7 +15,7 @@ camera ─► (rectify, real robot only) ─► YOLO11n-seg ─► masks: yellow
 | where | what runs | how it talks to the robot |
 |---|---|---|
 | simulator | `gym_duckietown.envs.DuckietownEnv` | `env.step([v, ω])` |
-| real robot | `robot_io` (native, owns camera + motors) | ZMQ :7777, the protocol of gym-duckietown's `Duckiebot-v0` |
+| real robot | `robot_io` (native, owns camera + motors) | ZMQ :5555, the protocol of gym-duckietown's `Duckiebot-v0` (which expects :7777: use `--port 7777` for it) |
 | real robot | agent in the Ultralytics JetPack container (TensorRT FP16) or on a laptop | `RealRobotEnv.step([v, ω])` |
 
 ## Results (simulation)
@@ -194,14 +194,14 @@ bash duckie_yolo/robot/setup_orin.sh    # asks before every change: Python env, 
 # LIFT THE ROBOT: spins each wheel, saves a camera frame (stop the robot_io service first if it runs)
 ~/dy/bin/python -m duckie_yolo.robot.robot_io --i2c-bus 1 --hw-test
 ```
-`setup_orin.sh` installs `robot_io` (camera + wheels on ZMQ :7777, watchdog 0.5 s, duty cap 0.8) as the
+`setup_orin.sh` installs `robot_io` (camera + wheels on ZMQ :5555, watchdog 0.5 s, duty cap 0.8) as the
 `duckie-robot-io` service in a Python ≥ 3.8 env (`~/dy`). On **JetPack 4 (Jetson Nano, Ubuntu 18.04,
 Python 3.6)** it creates that env with `python3.8` and pins `Jetson.GPIO<2.1` (2.1+ needs the gpiochip
 interface of newer kernels) and `opencv-python-headless<5` (prebuilt wheels only; without GStreamer
 the camera uses a `gst-launch` pipe).
 
 ### Web interface (browser only)
-Everything below can be done from a browser at **`http://<robot-ip>:5555`**; nothing runs on the laptop.
+Everything below can be done from a browser at **`http://<robot-ip>:8080`**; nothing runs on the laptop.
 The web UI runs on the robot in the GPU Docker container (Ultralytics + TensorRT for the JetPack) and is
 `robot_io`'s only client:
 ```bash

@@ -31,7 +31,7 @@ from .robot_config import RobotConfig
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="localhost")
-    ap.add_argument("--port", type=int, default=7777)
+    ap.add_argument("--port", type=int, default=5555)
     ap.add_argument("--encoding", default="raw", choices=["raw", "jpeg"], help="use jpeg over Wi-Fi")
     ap.add_argument("--weights", default="", help=".pt / .onnx / .engine (TensorRT on the Orin)")
     ap.add_argument("--segmenter", default=None, choices=["yolo", "color"])

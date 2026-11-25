@@ -6,7 +6,7 @@
 #   cd ~/gym-duckietown/yolo_lane_following && bash duckie_yolo/robot/setup_orin.sh
 #
 # Result: robot_io (camera + wheels) runs natively as a systemd service; the web UI runs in the
-# GPU Docker container and is used from a browser at http://<robot-ip>:5555
+# GPU Docker container and is used from a browser at http://<robot-ip>:8080
 set -euo pipefail
 
 PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # .../yolo_lane_following
@@ -102,8 +102,8 @@ if [[ -x "$VENV/bin/python" ]] && ask "-- run robot_io as a service (starts at b
   echo "   Extra robot_io options, from the wheel test (--hw-test) and the first camera image:"
   echo "   e.g. --invert-left / --invert-right if a wheel turned the wrong way, --flip-method 2 if the image is upside down."
   read -r -p "   extra options (empty for none): " EXTRA
-  if (ss -ltn 2>/dev/null || true) | grep -q ':7777 '; then
-    echo "   NOTE: something already listens on :7777 (robot_io started by hand, e.g. in tmux?). Stop it first:"
+  if (ss -ltn 2>/dev/null || true) | grep -q ':5555 '; then
+    echo "   NOTE: something already listens on :5555 (robot_io started by hand, e.g. in tmux?). Stop it first:"
     echo "         tmux attach -t io, then Ctrl-C."
     read -r -p "   press Enter when it is stopped... " _
   fi
@@ -170,7 +170,7 @@ IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 cat <<EOF
 
 == done
-  Open http://${IP:-<robot-ip>}:5555 in a browser on your laptop: camera, driving + recording,
+  Open http://${IP:-<robot-ip>}:8080 in a browser on your laptop: camera, driving + recording,
   models, calibration and the dataset guidelines are all there.
 
   robot_io by hand (instead of the service):  $VENV/bin/python -m duckie_yolo.robot.robot_io --i2c-bus $I2C_BUS

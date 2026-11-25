@@ -44,7 +44,7 @@ class RobotController:
     def __init__(
         self,
         robot_host: str = "localhost",
-        robot_port: int = 7777,
+        robot_port: int = 5555,
         robot_config: str = "configs/robot_mybot.yaml",
         models: Optional[ModelManager] = None,
         recorder: Optional[Recorder] = None,

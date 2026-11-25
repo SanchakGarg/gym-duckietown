@@ -1,6 +1,6 @@
 # duckie_yolo agent container for the Jetson: Ultralytics + CUDA + TensorRT matching the JetPack.
 # The hardware is owned by robot_io running natively on the host; this container only needs the
-# network (ZMQ on localhost:7777) and the GPU.
+# network (ZMQ on localhost:5555) and the GPU.
 #
 # build (from yolo_lane_following/):
 #   docker build -t duckie-yolo-agent --build-arg JETPACK=6 -f duckie_yolo/robot/docker/Dockerfile.agent .
